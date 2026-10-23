@@ -692,7 +692,8 @@ function agePaper(x,W,H,p){
 }
 /* Coffee: a dried cup ring is darkest at its outer edge, where the liquid evaporated, and fades inward. */
 function stainCanvas(R,w,r,scale,o){
-  const pad=4,N=Math.ceil((R+pad)*2*scale),c=document.createElement('canvas');c.width=c.height=N;
+  const pad=4,N=Math.ceil((R+pad)*2*scale);if(!(N>0&&N<4000)){console.warn('stain',R,w,scale,N);return null}
+  const c=document.createElement('canvas');c.width=c.height=N;
   const x=c.getContext('2d'),d=x.createImageData(N,N),D=d.data,cen=N/2;
   const ph=[r()*7,r()*7,r()*7,r()*7,r()*7],gapA=r()*7,gapW=o.full?0:.8+r()*2.4,wash=o.wash;
   const col=[150,95,40];
@@ -713,8 +714,8 @@ function coffeeRings(x,W,H,p,scale){
   const r=prng(hash(S.cseed|0,p+1,53,11));
   const n=p===0?1+(r()<.35):(r()<.4?0:r()<.75?1:2);
   x.save();x.globalCompositeOperation='multiply';
-  const put=(c,cx,cy)=>{const s=c.width/scale;x.drawImage(c,cx-s/2,cy-s/2,s,s)};
   const sc=Math.min(scale,2);
+  const put=(c,cx,cy)=>{if(!c)return;const s=c.width/sc;x.drawImage(c,cx-s/2,cy-s/2,s,s)};
   for(let i=0;i<n;i++){
     const R=95+r()*40,cx=-R*.3+r()*(W+R*.6),cy=-R*.3+r()*(H+R*.6);
     put(stainCanvas(R,4+r()*5,r,sc,{full:r()<.55,base:.35+r()*.35,wash:r()<.65?.03+r()*.06:0}),cx,cy);
