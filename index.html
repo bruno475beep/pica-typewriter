@@ -40,6 +40,11 @@ html{height:100%;box-sizing:border-box}
 .findbar{position:absolute;top:calc(100% + 8px);right:max(16px,env(safe-area-inset-right,0px));display:flex;gap:6px;align-items:center;background:var(--chrome);border:1px solid var(--line);border-radius:6px;padding:6px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:3;max-width:calc(100% - 32px)}
 .findbar input{font:inherit;font-size:14px;color:var(--fg);background:var(--field);border:1px solid var(--line);border-radius:4px;height:28px;padding:0 8px;width:min(220px,42vw);min-width:0}
 .findbar button{min-width:28px;padding:0 6px}
+.hfbar{flex-wrap:wrap;align-items:flex-start;gap:8px 12px;padding:10px;width:min(560px,calc(100% - 32px))}
+.hfcol{display:flex;flex-direction:column;gap:5px;flex:1 1 200px;min-width:0}
+.hfbar .hfcol input{width:100%;font-family:"Courier Prime","Courier New",monospace}
+.hfnote{flex:1 1 100%;order:3;font-size:11.5px;color:var(--muted)}
+.hfbar #hfclose{order:2}
 .fcount{font-family:var(--f-data);font-size:11px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:58px;text-align:center}
 .hit{position:absolute;background:rgba(240,190,40,.36)}
 .hit.cur{background:rgba(240,140,20,.55);box-shadow:0 0 0 1px rgba(190,95,0,.75)}
@@ -143,6 +148,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
       </div></div>
     <div class="grp"><label for="spacing">Spacing</label>
       <select id="spacing"><option value="1">Single</option><option value="1.5">1½</option><option value="2">Double</option></select></div>
+    <button id="hf" title="Text at the top and bottom of every sheet">Header &amp; footer</button>
     <div class="grp"><label for="paper">Paper</label>
       <select id="paper"><option value="a4">A4</option><option value="letter">Letter</option></select></div>
     <div class="grp"><label for="wear">Wear</label><input type="range" id="wear" min="0" max="100" step="5"></div>
@@ -173,6 +179,16 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <button id="findprev" aria-label="Previous match" title="Previous (Shift+Enter)">↑</button>
     <button id="findnext" aria-label="Next match" title="Next (Enter)">↓</button>
     <button id="findclose" aria-label="Close find" title="Close (Esc)">✕</button>
+  </div>
+  <div class="findbar hfbar" id="hfbar" role="group" aria-label="Header and footer" hidden>
+    <div class="hfcol"><span class="lbl">Header</span>
+      <input id="hd0" type="text" maxlength="62" placeholder="Header line 1" aria-label="Header line 1" autocomplete="off" spellcheck="false">
+      <input id="hd1" type="text" maxlength="62" placeholder="Header line 2" aria-label="Header line 2" autocomplete="off" spellcheck="false"></div>
+    <div class="hfcol"><span class="lbl">Footer</span>
+      <input id="ft0" type="text" maxlength="62" placeholder="Footer line 1" aria-label="Footer line 1" autocomplete="off" spellcheck="false">
+      <input id="ft1" type="text" maxlength="62" placeholder="Footer line 2" aria-label="Footer line 2" autocomplete="off" spellcheck="false"></div>
+    <div class="hfnote">Centred on every sheet. {page} and {pages} become page numbers.</div>
+    <button id="hfclose" aria-label="Close header and footer" title="Close (Esc)">✕</button>
   </div>
   <div class="scale" id="scale" aria-hidden="true"><div class="scale-in" id="scaleIn"><div class="bellzone" id="bellzone"></div><div class="marker" id="marker"></div></div></div>
 </header>
@@ -603,7 +619,7 @@ const INKS={black:'#1c1b1f',blue:'#1f2f63',red:'#9e1f1c'};
 const FONTS={worn:'"Special Elite","Courier Prime","Courier New",monospace',vworn:'"Special Elite","Courier Prime","Courier New",monospace',clean:'"Courier Prime","Courier New",monospace'};
 const ITALIC='italic '+16+'px "Courier Prime","Courier New",monospace';
 const PAPERC={white:'#fcfcf9',ivory:'#f6f0df',manila:'#eedfb9',canary:'#f7eca2',pink:'#f5dcdf',blue:'#dde8f2',green:'#e0ecd9'};
-const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true,coffee:false,aged:false,cseed:1,dseed:1};
+const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true,coffee:false,aged:false,cseed:1,dseed:1,hdr:['',''],ftr:['','']};
 /* Styles live inside the hidden text as one invisible marker right after a character:
    U+E000 + flags (1 bold, 2 underline, 4 italic). Native undo/redo then covers styling too. */
 const isM=ch=>{if(ch===undefined)return false;const c=ch.charCodeAt(0);return c>=0xE000&&c<=0xE007};
@@ -739,6 +755,10 @@ function paperBg(p,scale,t){
   if(bgCache.size>24)bgCache.clear();bgCache.set(key,c);return c;
 }
 
+/* Header and footer: up to two centred lines each, typed in the top and bottom margins of every sheet. */
+function hfLines(p){const sub=v=>String(v||'').replace(/\{page\}/gi,p+1).replace(/\{pages\}/gi,L?L.pages:1).slice(0,G.cols);
+  const out=[];(S.hdr||[]).forEach((v,i)=>{v=sub(v);if(v.trim())out.push({v,y:40+i*FS+12.5,k:i})});
+  (S.ftr||[]).forEach((v,i)=>{v=sub(v);if(v.trim())out.push({v,y:G.h-MARGIN+36+i*FS+12.5,k:2+i})});return out}
 /* Every key strike on a page, with its jitter: shared by the screen, the image export and the PDF. */
 function eachStrike(p,items,t,emit){
   const one=(ch,code,h,x,y,ox,oy,fk)=>{
@@ -757,6 +777,8 @@ function eachStrike(p,items,t,emit){
       if(it.f&1){const hb=hash(h,66,6,1);one(it.ch,it.code,hb,x,y,.55+((hb>>>4)&255)/255*.3,((hb>>>12)&255)/255*.3-.15,fk)}}
     if(it.f&2)one('_',95,hash(h,95,7,5),x,y,0,0,'main');
   }
+  for(const ln of hfLines(p)){const chs=[...ln.v],x0=G.w/2-chs.length*CW/2+CW/2;
+    chs.forEach((ch,c)=>{if(ch===' ')return;const code=ch.codePointAt(0);one(ch,code,hash(p+1,9000+ln.k,c,code),x0+c*CW,ln.y,0,0,'main')})}
 }
 function drawPage(canvas,p,items,scale,mode){mode=mode||'full';
   const g=G,W=g.w,H=g.h;canvas.width=Math.round(W*scale);canvas.height=Math.round(H*scale);
@@ -774,7 +796,7 @@ function drawPage(canvas,p,items,scale,mode){mode=mode||'full';
     if(t>0){lc.globalAlpha=a*.22*t;lc.fillText(ch,.35,.25)}
     lc.restore();
   });
-  if(t>0&&items&&items.length){lc.globalCompositeOperation='destination-out';lc.globalAlpha=.6*t;lc.fillStyle=lc.createPattern(speckC,'repeat');lc.fillRect(0,0,W,H);
+  if(t>0&&((items&&items.length)||hfLines(p).length)){lc.globalCompositeOperation='destination-out';lc.globalAlpha=.6*t;lc.fillStyle=lc.createPattern(speckC,'repeat');lc.fillRect(0,0,W,H);
     if(VW()){lc.globalAlpha=.55;lc.fillStyle=lc.createPattern(blotC,'repeat');lc.fillRect(0,0,W,H)}}
   ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(lay,0,0);
 }
@@ -791,7 +813,7 @@ function render(){
   const avail=desk.clientWidth-Math.max(32,2*16);sc=Math.min(1.1,avail/G.w);
   const dpr=Math.min(window.devicePixelRatio||1,2.5);
   ensureSheets(L.pages);
-  const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,S.coffee,S.aged,S.cseed,S.dseed,fontsReady,(sc*dpr).toFixed(3)].join();
+  const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,S.coffee,S.aged,S.cseed,S.dseed,JSON.stringify([S.hdr,S.ftr]),L.pages,fontsReady,(sc*dpr).toFixed(3)].join();
   sheets.forEach((s,p)=>{
     s.el.style.width=G.w*sc+'px';s.el.style.height=G.h*sc+'px';s.cv.style.width=G.w*sc+'px';s.cv.style.height=G.h*sc+'px';
     const items=L.items[p]||[];let sig=key+'#';for(const it of items)sig+=it.ch+it.r+'.'+it.c+'.'+it.f+'|';
@@ -835,7 +857,7 @@ function goHit(dir){
 }
 function openFind(){
   const fb=$('findbar'),q=$('findq');const sel=strip(ta.value.slice(ta.selectionStart,ta.selectionEnd));
-  fb.hidden=false;if(sel&&sel.length<80&&!/[\n\f]/.test(sel))q.value=sel;
+  $('hfbar').hidden=true;$('hf').classList.remove('on');fb.hidden=false;if(sel&&sel.length<80&&!/[\n\f]/.test(sel))q.value=sel;
   q.focus();q.select();computeHits();hitI=-1;if(q.value)goHit(1);else drawHits();
 }
 function closeFind(){$('findbar').hidden=true;hits=[];hitI=-1;drawHits();ta.focus({preventScroll:true});updateCaret()}
@@ -1023,6 +1045,12 @@ function syncControls(){
 }
 function setOpt(k,v){S[k]=v;syncControls();render();save()}
 $('font').onchange=e=>setOpt('font',e.target.value);
+const HF=[['hd0','hdr',0],['hd1','hdr',1],['ft0','ftr',0],['ft1','ftr',1]];
+HF.forEach(([id,k,i])=>{const el=$(id);el.addEventListener('input',()=>{S[k]=[...(S[k]||['',''])];S[k][i]=el.value;render();save()});
+  el.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();closeHF()}else if(e.key==='Enter'){e.preventDefault();const n=HF.findIndex(h=>h[0]===id);if(n<3)$(HF[n+1][0]).focus();else closeHF()}})});
+function openHF(){HF.forEach(([id,k,i])=>$(id).value=(S[k]||[])[i]||'');$('findbar').hidden=true;$('hfbar').hidden=false;$('hf').classList.add('on');$('hd0').focus()}
+function closeHF(){$('hfbar').hidden=true;$('hf').classList.remove('on');ta.focus({preventScroll:true})}
+$('hf').onclick=()=>$('hfbar').hidden?openHF():closeHF();$('hfclose').onclick=closeHF;
 $('aged').onchange=e=>{if(e.target.checked)S.dseed=Math.random()*1e9|0;setOpt('aged',e.target.checked)};
 $('coffee').onchange=e=>{if(e.target.checked)S.cseed=Math.random()*1e9|0;setOpt('coffee',e.target.checked)};
 $('spacing').onchange=e=>setOpt('spacing',+e.target.value);
