@@ -62,6 +62,8 @@ button.warn{border-color:var(--accent);color:var(--accent)}
 button.primary{background:var(--fg);color:var(--chrome);border-color:var(--fg)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 input[type=range]{width:90px;accent-color:var(--accent)}
+.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;white-space:nowrap;user-select:none}
+.chk input{accent-color:var(--accent);margin:0;width:15px;height:15px;cursor:pointer}
 .inks{display:flex;gap:5px}
 .ink{width:22px;height:22px;padding:0;border-radius:50%;border:2px solid var(--chrome);box-shadow:0 0 0 1px var(--line)}
 .ink.on{box-shadow:0 0 0 2px var(--accent)}
@@ -117,7 +119,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
   <div class="bar-in">
     <div class="brand">Pica<small>10 chars / inch</small></div>
     <div class="grp"><label for="font">Type</label>
-      <select id="font"><option value="worn">Worn ribbon</option><option value="clean">Clean</option></select></div>
+      <select id="font"><option value="worn">Worn ribbon</option><option value="vworn">Very worn ribbon</option><option value="clean">Clean</option></select></div>
     <div class="grp"><span class="lbl">Ink</span>
       <div class="inks" role="group" aria-label="Ink colour">
         <button class="ink" id="ink-black" data-ink="black" style="background:#1c1b1f" aria-label="Black ink"></button>
@@ -144,6 +146,8 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <div class="grp"><label for="paper">Paper</label>
       <select id="paper"><option value="a4">A4</option><option value="letter">Letter</option></select></div>
     <div class="grp"><label for="wear">Wear</label><input type="range" id="wear" min="0" max="100" step="5"></div>
+    <label class="chk" title="Yellowed edges, foxing, dust and fold creases, like an old document. Tick again for a new sheet."><input type="checkbox" id="aged">Aged paper</label>
+    <label class="chk" title="Random coffee cup rings on the sheets. Tick again for new ones."><input type="checkbox" id="coffee">Coffee rings</label>
     <button id="sound" aria-pressed="true">Sound on</button>
     <button id="center" aria-pressed="true" title="Keep the typing line in the middle of the screen">Carriage view</button>
     <button id="fs" title="Full screen">Full screen</button>
@@ -596,10 +600,10 @@ const ta=$('ta'), stack=$('stack'), ov=$('ov'), caretEl=$('caret'), desk=$('desk
 const CW=9.6, MARGIN=96, FS=16;
 const PAPERS={a4:{w:794,h:1123},letter:{w:816,h:1056}};
 const INKS={black:'#1c1b1f',blue:'#1f2f63',red:'#9e1f1c'};
-const FONTS={worn:'"Special Elite","Courier Prime","Courier New",monospace',clean:'"Courier Prime","Courier New",monospace'};
+const FONTS={worn:'"Special Elite","Courier Prime","Courier New",monospace',vworn:'"Special Elite","Courier Prime","Courier New",monospace',clean:'"Courier Prime","Courier New",monospace'};
 const ITALIC='italic '+16+'px "Courier Prime","Courier New",monospace';
 const PAPERC={white:'#fcfcf9',ivory:'#f6f0df',manila:'#eedfb9',canary:'#f7eca2',pink:'#f5dcdf',blue:'#dde8f2',green:'#e0ecd9'};
-const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true};
+const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true,coffee:false,aged:false,cseed:1,dseed:1};
 /* Styles live inside the hidden text as one invisible marker right after a character:
    U+E000 + flags (1 bold, 2 underline, 4 italic). Native undo/redo then covers styling too. */
 const isM=ch=>{if(ch===undefined)return false;const c=ch.charCodeAt(0);return c>=0xE000&&c<=0xE007};
@@ -607,7 +611,7 @@ const MK=f=>String.fromCharCode(0xE000+f);
 const strip=s=>s.replace(/[-]/g,'');
 const F=(s,f)=>[...s].map(ch=>ch==='\n'?ch:ch+MK(f)).join('');
 let typeStyle=0,pinned=-1;
-const KEY='pica-typewriter-v1';
+const KEY='pica-typewriter-v2',OLDKEY='pica-typewriter-v1';
 let G,L,sc=1,fontsReady=false,desiredCol=null,anchor=0,downloads=null;
 const sheets=[];
 
@@ -618,7 +622,8 @@ function sampleText(){
 }
 
 /* ---------- storage ---------- */
-function load(){try{const v=JSON.parse(localStorage.getItem(KEY)||'null');if(v){Object.assign(S,v.s||{});if(v.v!==2)S.sound=true;return typeof v.t==='string'?v.t:null}}catch(e){}return null}
+/* v2 keeps its own store so the original page never sees settings it does not know; on first visit it borrows v1's text and settings. */
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem(OLDKEY)||'null');if(v){Object.assign(S,v.s||{});if(v.v!==2)S.sound=true;return typeof v.t==='string'?v.t:null}}catch(e){}return null}
 let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify({v:2,t:ta.value,s:S}))}catch(e){}},350)}
 
 /* ---------- geometry & layout ---------- */
@@ -652,7 +657,87 @@ function hash(a,b,c,d){let h=2166136261^a;h=Math.imul(h^b,16777619);h=Math.imul(
 function mkPattern(size,fn){const c=document.createElement('canvas');c.width=c.height=size;fn(c.getContext('2d'),size);return c}
 let seed=7;const rnd=()=>{seed=Math.imul(seed^(seed>>>15),2246822507)+0x9e3779b9|0;return((seed>>>0)%100000)/100000};
 const speckC=mkPattern(180,(x,s)=>{for(let i=0;i<1300;i++){x.globalAlpha=.35+rnd()*.65;x.beginPath();x.arc(rnd()*s,rnd()*s,.25+rnd()*.7,0,7);x.fill()}});
+const blotC=mkPattern(260,(x,s)=>{for(let i=0;i<70;i++){x.globalAlpha=.5+rnd()*.5;x.beginPath();x.ellipse(rnd()*s,rnd()*s,.8+rnd()*2.2,.5+rnd()*1.2,rnd()*3,0,7);x.fill()}});
 const grainC=mkPattern(220,(x,s)=>{const d=x.createImageData(s,s);for(let i=0;i<d.data.length;i+=4){const v=120+rnd()*80;d.data[i]=v;d.data[i+1]=v-4;d.data[i+2]=v-12;d.data[i+3]=rnd()*60}x.putImageData(d,0,0)});
+
+/* Very worn ribbon: the ink is past its limit. Aged paper: the sheet itself has yellowed and gathered dirt. */
+const VW=()=>S.font==='vworn';
+const wearT=()=>VW()?Math.min(1.5,S.wear/100+.5):S.wear/100;
+function mixHex(a,b,k){const h=x=>[1,3,5].map(i=>parseInt(x.slice(i,i+2),16));const A=h(a),B=h(b);return'#'+A.map((v,i)=>Math.round(v+(B[i]-v)*k).toString(16).padStart(2,'0')).join('')}
+const inkC=()=>VW()?mixHex(INKS[S.ink],'#6b5a48',.35):INKS[S.ink];
+function prng(a){return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function agePaper(x,W,H,p){
+  const r=prng(hash(S.dseed|0,p+1,31,7));x.save();x.globalCompositeOperation='multiply';
+  for(let i=0;i<7;i++){const cx=r()*W,cy=r()*H,R=150+r()*380,g=x.createRadialGradient(cx,cy,0,cx,cy,R),a=.05+r()*.08;
+    g.addColorStop(0,'rgba(196,158,92,'+a+')');g.addColorStop(1,'rgba(196,158,92,0)');x.fillStyle=g;x.fillRect(0,0,W,H)}
+  for(const [x0,y0,x1,y1] of [[0,0,1,0],[W,0,-1,0],[0,0,0,1],[0,H,0,-1]]){const e=22+r()*30,g=x.createLinearGradient(x0,y0,x0+x1*e,y0+y1*e);
+    g.addColorStop(0,'rgba(146,104,48,'+(.18+r()*.16)+')');g.addColorStop(1,'rgba(146,104,48,0)');x.fillStyle=g;x.fillRect(0,0,W,H)}
+  const n=25+r()*45|0;
+  for(let i=0;i<n;i++){const cx=r()*W,cy=r()*H,cl=r()<.5?3+r()*6|0:1;
+    for(let k=0;k<cl;k++){const sx=cx+(r()-.5)*40,sy=cy+(r()-.5)*40,R=.6+r()*r()*5,a=.15+r()*.35,g=x.createRadialGradient(sx,sy,0,sx,sy,R);
+      g.addColorStop(0,'rgba(140,88,40,'+a+')');g.addColorStop(.7,'rgba(150,100,50,'+a*.6+')');g.addColorStop(1,'rgba(150,100,50,0)');
+      x.fillStyle=g;x.beginPath();x.arc(sx,sy,R,0,7);x.fill()}}
+  x.fillStyle='rgb(70,62,54)';
+  for(let i=0,m=40+r()*60|0;i<m;i++){x.globalAlpha=.2+r()*.45;x.beginPath();x.arc(r()*W,r()*H,.3+r()*.8,0,7);x.fill()}
+  x.strokeStyle='rgb(80,70,60)';x.lineWidth=.45;
+  for(let i=0,m=2+r()*5|0;i<m;i++){const sx=r()*W,sy=r()*H,l=4+r()*14,a=r()*7;x.globalAlpha=.2+r()*.25;x.beginPath();x.moveTo(sx,sy);
+    x.quadraticCurveTo(sx+Math.cos(a+1)*l*.6,sy+Math.sin(a+1)*l*.6,sx+Math.cos(a)*l,sy+Math.sin(a)*l);x.stroke()}
+  if(r()<.5){const fx=r()<.5?40+r()*90:W-40-r()*90,fy=H*(.15+r()*.7),rot=r()*3;x.save();x.translate(fx,fy);x.rotate(rot);x.strokeStyle='rgb(90,78,64)';x.lineWidth=.7;
+    for(let k=1;k<15;k++){x.globalAlpha=.05+r()*.05;x.beginPath();x.ellipse(0,0,k*1.5,k*2,0,r()*.6,Math.PI*2-r()*.6);x.stroke()}x.restore()}
+  x.globalAlpha=1;
+  for(const fy of [H/3,2*H/3]){if(r()<.3)continue;const g=x.createLinearGradient(0,fy-7,0,fy+7);
+    g.addColorStop(0,'rgba(120,100,70,0)');g.addColorStop(.5,'rgba(120,100,70,.2)');g.addColorStop(1,'rgba(120,100,70,0)');x.fillStyle=g;x.fillRect(0,fy-7,W,14)
+    x.globalCompositeOperation='source-over';x.fillStyle='rgba(255,255,250,.35)';x.fillRect(0,fy+.8,W,.8);x.globalCompositeOperation='multiply'}
+  x.restore();
+}
+/* Coffee: a dried cup ring is darkest at its outer edge, where the liquid evaporated, and fades inward. */
+function stainCanvas(R,w,r,scale,o){
+  const pad=4,N=Math.ceil((R+pad)*2*scale);if(!(N>0&&N<4000)){console.warn('stain',R,w,scale,N);return null}
+  const c=document.createElement('canvas');c.width=c.height=N;
+  const x=c.getContext('2d'),d=x.createImageData(N,N),D=d.data,cen=N/2;
+  const ph=[r()*7,r()*7,r()*7,r()*7,r()*7],gapA=r()*7,gapW=o.full?0:.8+r()*2.4,wash=o.wash;
+  const col=[150,95,40];
+  for(let py=0;py<N;py++)for(let px=0;px<N;px++){
+    const dx=(px+.5-cen)/scale,dy=(py+.5-cen)/scale,dist=Math.hypot(dx,dy);let a=0;
+    if(dist<R+2){const an=Math.atan2(dy,dx);
+      const rr=R*(1+.012*Math.sin(3*an+ph[3])+.007*Math.sin(8*an+ph[1]));
+      let I=.62+.24*Math.sin(2*an+ph[0])+.18*Math.sin(5*an+ph[1])+.09*Math.sin(13*an+ph[2]);
+      if(gapW){const dd=Math.abs(((an-gapA)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI);if(dd<gapW/2)I*=Math.max(0,dd/(gapW/2)*1.6-.6)}
+      const e=rr-dist;
+      if(e>-.8){const edge=e<0?1+e/.8:Math.exp(-e/(w*.35))+.25*Math.exp(-Math.pow((e-w*1.7)/(w*.4),2));a=Math.max(0,I)*o.base*edge;
+        if(e>0)a+=wash*(.6+.4*Math.min(1,dist/rr))*(.8+.2*Math.sin(4*an+ph[4]))}}
+    a=Math.min(.95,a);const i=(py*N+px)*4;
+    D[i]=255-a*(255-col[0]);D[i+1]=255-a*(255-col[1]);D[i+2]=255-a*(255-col[2]);D[i+3]=255}
+  x.putImageData(d,0,0);return c;
+}
+function coffeeRings(x,W,H,p,scale){
+  const r=prng(hash(S.cseed|0,p+1,53,11));
+  const n=p===0?1+(r()<.35):(r()<.4?0:r()<.75?1:2);
+  x.save();x.globalCompositeOperation='multiply';
+  const sc=Math.min(scale,2);
+  const put=(c,cx,cy)=>{if(!c)return;const s=c.width/sc;x.drawImage(c,cx-s/2,cy-s/2,s,s)};
+  for(let i=0;i<n;i++){
+    const R=95+r()*40,cx=-R*.3+r()*(W+R*.6),cy=-R*.3+r()*(H+R*.6);
+    put(stainCanvas(R,4+r()*5,r,sc,{full:r()<.55,base:.35+r()*.35,wash:r()<.65?.03+r()*.06:0}),cx,cy);
+    if(r()<.3){const a=r()*7,off=6+r()*18;put(stainCanvas(R*(.97+r()*.05),3+r()*3,r,sc,{full:false,base:.2+r()*.2,wash:0}),cx+Math.cos(a)*off,cy+Math.sin(a)*off)}
+    for(let k=0,m=r()<.6?1+r()*5|0:0;k<m;k++){const a=r()*7,dd=R*(1.05+r()*.5),rr=1.5+r()*r()*6;
+      put(stainCanvas(rr,Math.max(.6,rr*.4),r,sc,{full:true,base:.5+r()*.3,wash:.15+r()*.15}),cx+Math.cos(a)*dd,cy+Math.sin(a)*dd)}
+  }
+  x.restore();
+}
+/* The sheet beneath the ink only changes with the settings, so it is drawn once per page and reused while typing. */
+const bgCache=new Map();
+function paperBg(p,scale,t){
+  const key=[p,S.paper,S.pc,scale.toFixed(3),t.toFixed(2),S.aged?S.dseed:0,S.coffee?S.cseed:0].join();
+  let c=bgCache.get(key);if(c)return c;
+  const W=G.w,H=G.h;c=document.createElement('canvas');c.width=Math.round(W*scale);c.height=Math.round(H*scale);
+  const x=c.getContext('2d');x.setTransform(scale,0,0,scale,0,0);
+  x.fillStyle=PAPERC[S.pc]||PAPERC.white;x.fillRect(0,0,W,H);
+  if(t>0){x.globalAlpha=Math.min(.75,.25+.35*t);x.fillStyle=x.createPattern(grainC,'repeat');x.fillRect(0,0,W,H);x.globalAlpha=1}
+  if(S.aged)agePaper(x,W,H,p);
+  if(S.coffee)coffeeRings(x,W,H,p,scale);
+  if(bgCache.size>24)bgCache.clear();bgCache.set(key,c);return c;
+}
 
 /* Every key strike on a page, with its jitter: shared by the screen, the image export and the PDF. */
 function eachStrike(p,items,t,emit){
@@ -660,7 +745,9 @@ function eachStrike(p,items,t,emit){
     const h2=hash(h,code,3,9),kb=hash(code,11,13,17);
     const r1=(h&1023)/1023-.5,r2=((h>>>10)&1023)/1023-.5,r3=((h>>>20)&1023)/1023-.5,r4=(h2&1023)/1023;
     const keyY=((kb&255)/255-.5),keyA=((kb>>>8)&255)/255;
-    emit(ch,fk,x+r1*t+ox,y+(r2+keyY*1.1)*t+oy,r3*.045*t,1-t*(.08+r4*.3+keyA*.12));
+    let a=1-t*(.08+r4*.3+keyA*.12);
+    if(VW()){const d=hash(h,code,21,4),q=d&255;if(q<18)a*=.3+((d>>>8)&255)/255*.3;else if(q<45)a*=.7}
+    emit(ch,fk,x+r1*t+ox,y+(r2+keyY*1.1)*t+oy,r3*.045*t,Math.max(.12,a));
   };
   for(const it of items||[]){
     const h=hash(p+1,it.r,it.c,it.code);
@@ -674,13 +761,12 @@ function eachStrike(p,items,t,emit){
 function drawPage(canvas,p,items,scale,mode){mode=mode||'full';
   const g=G,W=g.w,H=g.h;canvas.width=Math.round(W*scale);canvas.height=Math.round(H*scale);
   const ctx=canvas.getContext('2d');ctx.setTransform(scale,0,0,scale,0,0);
-  if(mode!=='ink'){ctx.fillStyle=PAPERC[S.pc]||PAPERC.white;ctx.fillRect(0,0,W,H)}
-  const t=S.wear/100;
-  if(t>0&&mode!=='ink'){ctx.globalAlpha=.25+.35*t;ctx.fillStyle=ctx.createPattern(grainC,'repeat');ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}
+  const t=wearT();
+  if(mode!=='ink'){ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(paperBg(p,scale,t),0,0);ctx.setTransform(scale,0,0,scale,0,0)}
   if(mode==='paper')return;
   const lay=document.createElement('canvas');lay.width=canvas.width;lay.height=canvas.height;
   const lc=lay.getContext('2d');lc.setTransform(scale,0,0,scale,0,0);
-  lc.font=FS+'px '+FONTS[S.font];lc.fillStyle=INKS[S.ink];lc.textAlign='center';lc.textBaseline='alphabetic';
+  lc.font=FS+'px '+FONTS[S.font];lc.fillStyle=inkC();lc.textAlign='center';lc.textBaseline='alphabetic';
   const normal=FS+'px '+FONTS[S.font];let cur='';
   eachStrike(p,items,t,(ch,fk,x,y,rot,a)=>{
     const fnt=fk==='italic'?ITALIC:normal;if(fnt!==cur){lc.font=fnt;cur=fnt}
@@ -688,7 +774,8 @@ function drawPage(canvas,p,items,scale,mode){mode=mode||'full';
     if(t>0){lc.globalAlpha=a*.22*t;lc.fillText(ch,.35,.25)}
     lc.restore();
   });
-  if(t>0&&items&&items.length){lc.globalCompositeOperation='destination-out';lc.globalAlpha=.6*t;lc.fillStyle=lc.createPattern(speckC,'repeat');lc.fillRect(0,0,W,H)}
+  if(t>0&&items&&items.length){lc.globalCompositeOperation='destination-out';lc.globalAlpha=.6*t;lc.fillStyle=lc.createPattern(speckC,'repeat');lc.fillRect(0,0,W,H);
+    if(VW()){lc.globalAlpha=.55;lc.fillStyle=lc.createPattern(blotC,'repeat');lc.fillRect(0,0,W,H)}}
   ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(lay,0,0);
 }
 
@@ -704,7 +791,7 @@ function render(){
   const avail=desk.clientWidth-Math.max(32,2*16);sc=Math.min(1.1,avail/G.w);
   const dpr=Math.min(window.devicePixelRatio||1,2.5);
   ensureSheets(L.pages);
-  const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,fontsReady,(sc*dpr).toFixed(3)].join();
+  const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,S.coffee,S.aged,S.cseed,S.dseed,fontsReady,(sc*dpr).toFixed(3)].join();
   sheets.forEach((s,p)=>{
     s.el.style.width=G.w*sc+'px';s.el.style.height=G.h*sc+'px';s.cv.style.width=G.w*sc+'px';s.cv.style.height=G.h*sc+'px';
     const items=L.items[p]||[];let sig=key+'#';for(const it of items)sig+=it.ch+it.r+'.'+it.c+'.'+it.f+'|';
@@ -927,7 +1014,7 @@ window.addEventListener('pointerup',e=>{drag=null;if(touch){if(Math.hypot(e.clie
 
 /* ---------- controls ---------- */
 function syncControls(){
-  $('font').value=S.font;$('spacing').value=String(S.spacing);$('paper').value=S.paper;$('wear').value=S.wear;
+  $('font').value=S.font;$('coffee').checked=!!S.coffee;$('aged').checked=!!S.aged;$('spacing').value=String(S.spacing);$('paper').value=S.paper;$('wear').value=S.wear;
   document.querySelectorAll('.ink[data-ink]').forEach(b=>{b.classList.toggle('on',b.dataset.ink===S.ink);b.setAttribute('aria-pressed',b.dataset.ink===S.ink)});
   document.querySelectorAll('.ink[data-pc]').forEach(b=>{b.classList.toggle('on',b.dataset.pc===S.pc);b.setAttribute('aria-pressed',b.dataset.pc===S.pc)});
   $('bar').classList.toggle('collapsed',!S.bar);$('showbar').hidden=S.bar;
@@ -936,6 +1023,8 @@ function syncControls(){
 }
 function setOpt(k,v){S[k]=v;syncControls();render();save()}
 $('font').onchange=e=>setOpt('font',e.target.value);
+$('aged').onchange=e=>{if(e.target.checked)S.dseed=Math.random()*1e9|0;setOpt('aged',e.target.checked)};
+$('coffee').onchange=e=>{if(e.target.checked)S.cseed=Math.random()*1e9|0;setOpt('coffee',e.target.checked)};
 $('spacing').onchange=e=>setOpt('spacing',+e.target.value);
 $('paper').onchange=e=>setOpt('paper',e.target.value);
 $('wear').oninput=e=>setOpt('wear',+e.target.value);
@@ -1043,17 +1132,17 @@ $('pdf').onclick=async()=>{
        placed with the same jitter and ink density as on screen. Small files, and the text can be searched and copied. */
     let vector=true;
     try{
-      const files={main:S.font==='worn'?'special-elite.ttf':'courier-prime.ttf',italic:'courier-prime-italic.ttf'};
+      const files={main:S.font==='clean'?'courier-prime.ttf':'special-elite.ttf',italic:'courier-prime-italic.ttf'};
       for(const [k,f] of Object.entries(files)){const b64=await fontB64(f);pdf.addFileToVFS(f,b64);pdf.addFont(f,'pica-'+k,'normal')}
     }catch(e){vector=false}
-    const k=pw/G.w,t=S.wear/100,gcache={};
+    const k=pw/G.w,t=wearT(),gcache={};
     const gs=a=>{const q=Math.max(.05,Math.min(1,Math.round(a*20)/20));return gcache[q]||(gcache[q]=new pdf.GState({opacity:q}))};
     for(let p=0;p<L.pages;p++){if(p)pdf.addPage();
       const items=L.items[p]||[];
       if(!vector){const cv=document.createElement('canvas');drawPage(cv,p,items,2);pdf.addImage(cv.toDataURL('image/jpeg',.72),'JPEG',0,0,pw,ph,undefined,'FAST');continue}
-      if(t>0){const bg=document.createElement('canvas');drawPage(bg,p,[],.9,'paper');pdf.addImage(bg.toDataURL('image/jpeg',.7),'JPEG',0,0,pw,ph,undefined,'FAST')}
+      if(t>0||S.coffee||S.aged){const bg=document.createElement('canvas');drawPage(bg,p,[],1.2,'paper');pdf.addImage(bg.toDataURL('image/jpeg',.7),'JPEG',0,0,pw,ph,undefined,'FAST')}
       else{pdf.setFillColor(PAPERC[S.pc]||PAPERC.white);pdf.rect(0,0,pw,ph,'F')}
-      pdf.setTextColor(INKS[S.ink]);pdf.setFontSize(FS*k);let curF='';
+      pdf.setTextColor(inkC());pdf.setFontSize(FS*k);let curF='';
       eachStrike(p,items,t,(ch,fk,x,y,rot,a)=>{
         if(fk!==curF){pdf.setFont('pica-'+fk,'normal');curF=fk}
         const w=pdf.getTextWidth(ch),deg=-rot*180/Math.PI,c=Math.cos(rot),s=Math.sin(rot);
