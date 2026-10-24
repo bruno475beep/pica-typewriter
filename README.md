@@ -4,7 +4,7 @@ Uma máquina de escrever no navegador: fonte de datilografia, fita gasta, som de
 
 **Use agora:** https://bruno475beep.github.io/pica-typewriter/
 
-Fitas *Worn ribbon*, *Very worn ribbon* e *Clean*, e duas opções que se combinam com qualquer fita: *Aged paper* (papel amarelado, manchas, poeira e dobras de documento antigo) e *Coffee rings* (marcas aleatórias de xícara de café; marque de novo para sortear outras).
+Fitas *Worn ribbon*, *Very worn ribbon* e *Clean*, e duas opções que se combinam com qualquer fita: *Aged paper* (pequenas marcas de desgaste espalhadas pela folha) e *Coffee* (uma única marca de xícara, *Single spot*, ou marcas aleatórias, *Random rings*; o botão ↻ sorteia outras).
 
 Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas em cada um, repetidas em todas as folhas; `{page}` e `{pages}` viram a numeração.
 
@@ -12,4 +12,4 @@ Tudo roda num único arquivo `index.html`, sem servidor e sem instalação — p
 
 Atalhos: Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado · Ctrl+Z desfazer.
 
-Versões anteriores: [v1](https://bruno475beep.github.io/pica-typewriter/v1/) (a primeira) e [v2](https://bruno475beep.github.io/pica-typewriter/v2/) (com os efeitos, sem cabeçalho e rodapé).
+Versões anteriores: [v1](https://bruno475beep.github.io/pica-typewriter/v1/) (a primeira), [v2](https://bruno475beep.github.io/pica-typewriter/v2/) (com os efeitos, sem cabeçalho e rodapé) e [v3](https://bruno475beep.github.io/pica-typewriter/v3/) (com papel envelhecido mais forte).
