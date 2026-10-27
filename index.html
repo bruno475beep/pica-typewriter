@@ -169,6 +169,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <button id="copy">Copy text</button>
     <button id="savetxt" disabled title="Plain text, no styles">Save .txt</button>
     <button id="savemd" disabled title="Markdown: bold, italic and underline kept">Save .md</button>
+    <button id="savedocx" disabled title="Word document to keep working on: text, styles, header and footer, in the typewriter font. No ribbon wear, aged paper or coffee.">Save .docx</button>
     <button id="png" disabled>Save page image</button>
     <button id="pdf" class="primary" disabled>Save PDF</button>
     <button id="hidebar" title="Hide toolbar (Ctrl+\)" aria-label="Hide toolbar">&#9652; Hide</button>
@@ -1176,6 +1177,99 @@ $('png').onclick=async()=>{
   const blob=await new Promise(r=>cv.toBlob(r,'image/png'));await offer(baseName()+'-page-'+(p+1)+'.png',blob);
 };
 
+/* ---------- Word ---------- */
+/* An ordinary, editable .docx for further work: text, bold/italic/underline, page breaks, header and footer,
+   paper size, margins and spacing. No ribbon wear, aged paper or coffee. The typewriter fonts travel inside the file. */
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(b){let c=~0;for(let i=0;i<b.length;i++)c=CRC[(c^b[i])&255]^(c>>>8);return(~c)>>>0}
+function zipStore(files,type){
+  const enc=new TextEncoder(),parts=[],cd=[];let off=0;
+  for(const f of files){const nm=enc.encode(f.name),d=typeof f.data==='string'?enc.encode(f.data):f.data,crc=crc32(d);
+    const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);
+    h.setUint16(12,0x21,true);h.setUint32(14,crc,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nm.length,true);
+    parts.push(new Uint8Array(h.buffer),nm,d);
+    const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);
+    c.setUint16(14,0x21,true);c.setUint32(16,crc,true);c.setUint32(20,d.length,true);c.setUint32(24,d.length,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+    cd.push(new Uint8Array(c.buffer),nm);off+=30+nm.length+d.length}
+  const cdLen=cd.reduce((a,b)=>a+b.length,0),e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cdLen,true);e.setUint32(16,off,true);
+  return new Blob([...parts,...cd,new Uint8Array(e.buffer)],{type});
+}
+/* Embedded fonts are stored obfuscated: the first 32 bytes XORed with the font key GUID, bytes reversed (ECMA-376 17.8.1). */
+function odttf(b64,guid){const bin=atob(b64),d=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)d[i]=bin.charCodeAt(i);
+  const hex=guid.replace(/[{}-]/g,''),key=[];for(let i=30;i>=0;i-=2)key.push(parseInt(hex.substr(i,2),16));
+  for(let i=0;i<32;i++)d[i]^=key[i%16];return d}
+const xesc=s=>s.replace(/[\u0000-\u0008\u000B-\u001F￾￿]/g,'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function buildDocx(){
+  const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const HEAD='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n',REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  const CT='application/vnd.openxmlformats-officedocument.wordprocessingml.';
+  const clean=S.font==='clean',base=clean?'Courier Prime':'Special Elite';
+  const t=ta.value;let usedItalic=false;
+  const runs=chars=>{let out='',buf='',rf=-1;
+    const flush=()=>{if(!buf)return;let pr='';
+      if(rf&4&&!clean)pr+='<w:rFonts w:ascii="Courier Prime" w:hAnsi="Courier Prime" w:cs="Courier Prime"/>';
+      if(rf&1)pr+='<w:b/>';if(rf&4)pr+='<w:i/>';if(rf&2)pr+='<w:u w:val="single"/>';
+      out+='<w:r>'+(pr?'<w:rPr>'+pr+'</w:rPr>':'')+buf.split('\t').map(x=>x?'<w:t xml:space="preserve">'+xesc(x)+'</w:t>':'').join('<w:tab/>')+'</w:r>';buf=''};
+    for(const c of chars){if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+  /* one paragraph per typed line, as on the sheet; a new page starts the next paragraph on a fresh page */
+  const paras=[];let cur=[],brk=false;
+  for(let i=0;i<t.length;){const ch=t[i];if(isM(ch)){i++;continue}
+    const f=isM(t[i+1])?t.charCodeAt(i+1)-0xE000:0;let j=i+1;while(isM(t[j]))j++;
+    if(ch==='\n'||ch==='\f'){paras.push({cur,brk});cur=[];brk=ch==='\f'}
+    else if(ch!=='\r'){cur.push({ch,f});if(f&4)usedItalic=true}
+    i=j}
+  paras.push({cur,brk});
+  const body=paras.map(p=>'<w:p>'+(p.brk?'<w:pPr><w:pageBreakBefore/></w:pPr>':'')+runs(p.cur)+'</w:p>').join('');
+  const hf=(tag,lines)=>{const ps=(lines||[]).filter(v=>v&&v.trim()).map(v=>'<w:p><w:pPr><w:jc w:val="center"/></w:pPr>'+
+      v.split(/(\{pages?\})/i).filter(Boolean).map(x=>{const m=x.toLowerCase();
+        if(m==='{page}'||m==='{pages}')return'<w:fldSimple w:instr=" '+(m==='{page}'?'PAGE':'NUMPAGES')+' "><w:r><w:t>1</w:t></w:r></w:fldSimple>';
+        return'<w:r><w:t xml:space="preserve">'+xesc(x)+'</w:t></w:r>'}).join('')+'</w:p>').join('');
+    return ps?HEAD+'<w:'+tag+' '+NS+'>'+ps+'</w:'+tag+'>':''};
+  const hdr=hf('hdr',S.hdr),ftr=hf('ftr',S.ftr);
+  const pg=S.paper==='a4'?[11906,16838]:[12240,15840];
+  const doc=HEAD+'<w:document '+NS+'><w:body>'+body+'<w:sectPr>'+(hdr?'<w:headerReference w:type="default" r:id="rIdH"/>':'')+(ftr?'<w:footerReference w:type="default" r:id="rIdF"/>':'')+
+    '<w:pgSz w:w="'+pg[0]+'" w:h="'+pg[1]+'"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="600" w:footer="440" w:gutter="0"/></w:sectPr></w:body></w:document>';
+  const lang=xesc((navigator.language||'en-US').slice(0,10));
+  const styles=HEAD+'<w:styles '+NS+'><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="'+base+'" w:hAnsi="'+base+'" w:cs="'+base+'" w:eastAsia="'+base+'"/>'+
+    '<w:color w:val="'+INKS[S.ink].slice(1).toUpperCase()+'"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="'+lang+'"/></w:rPr></w:rPrDefault>'+
+    '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="'+Math.round(240*S.spacing)+'" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'+
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+  /* fonts: the regular face of the chosen type, plus Courier Prime Italic when italics are used */
+  const guid=()=>'{'+(crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g,()=>(Math.random()*16|0).toString(16))).toUpperCase()+'}';
+  const fonts=[],frels=[],ffiles=[];let n=0;
+  const embed=async(file,kind)=>{const g=guid(),id='rIdFont'+(++n);ffiles.push({name:'word/fonts/font'+n+'.odttf',data:odttf(await fontB64(file),g)});
+    frels.push('<Relationship Id="'+id+'" Type="'+REL+'font" Target="fonts/font'+n+'.odttf"/>');return'<w:'+kind+' r:id="'+id+'" w:fontKey="'+g+'"/>'};
+  try{
+    if(clean)fonts.push('<w:font w:name="Courier Prime"><w:altName w:val="Courier New"/><w:family w:val="modern"/><w:pitch w:val="fixed"/>'+
+      await embed('courier-prime.ttf','embedRegular')+(usedItalic?await embed('courier-prime-italic.ttf','embedItalic'):'')+'</w:font>');
+    else{fonts.push('<w:font w:name="Special Elite"><w:altName w:val="Courier New"/><w:family w:val="modern"/><w:pitch w:val="variable"/>'+await embed('special-elite.ttf','embedRegular')+'</w:font>');
+      if(usedItalic)fonts.push('<w:font w:name="Courier Prime"><w:altName w:val="Courier New"/><w:family w:val="modern"/><w:pitch w:val="fixed"/>'+await embed('courier-prime-italic.ttf','embedItalic')+'</w:font>')}
+  }catch(e){fonts.length=0;frels.length=0;ffiles.length=0}
+  const files=[
+    {name:'[Content_Types].xml',data:HEAD+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'+
+      '<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>'+
+      '<Override PartName="/word/document.xml" ContentType="'+CT+'document.main+xml"/><Override PartName="/word/styles.xml" ContentType="'+CT+'styles+xml"/>'+
+      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/><Override PartName="/word/fontTable.xml" ContentType="'+CT+'fontTable+xml"/>'+
+      (hdr?'<Override PartName="/word/header1.xml" ContentType="'+CT+'header+xml"/>':'')+(ftr?'<Override PartName="/word/footer1.xml" ContentType="'+CT+'footer+xml"/>':'')+'</Types>'},
+    {name:'_rels/.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+REL+'officeDocument" Target="word/document.xml"/></Relationships>'},
+    {name:'word/document.xml',data:doc},
+    {name:'word/_rels/document.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/><Relationship Id="rIdN" Type="'+REL+'fontTable" Target="fontTable.xml"/>'+
+      (hdr?'<Relationship Id="rIdH" Type="'+REL+'header" Target="header1.xml"/>':'')+(ftr?'<Relationship Id="rIdF" Type="'+REL+'footer" Target="footer1.xml"/>':'')+'</Relationships>'},
+    {name:'word/styles.xml',data:styles},
+    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'>'+(ffiles.length?'<w:embedTrueTypeFonts/>':'')+'<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
+    {name:'word/fontTable.xml',data:HEAD+'<w:fonts '+NS+'>'+fonts.join('')+'</w:fonts>'},
+    {name:'word/_rels/fontTable.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+frels.join('')+'</Relationships>'},
+    ...ffiles];
+  if(hdr)files.push({name:'word/header1.xml',data:hdr});
+  if(ftr)files.push({name:'word/footer1.xml',data:ftr});
+  return zipStore(files,CT+'document');
+}
+$('savedocx').onclick=async()=>{const b=$('savedocx');b.disabled=true;
+  try{await offer(baseName()+'.docx',await buildDocx())}catch(e){toast('The Word file could not be made')}finally{b.disabled=!downloads}};
+
 /* ---------- boot ---------- */
 const saved=load();ta.value=saved!=null?saved:sampleText();
 syncControls();
@@ -1184,7 +1278,7 @@ requestAnimationFrame(()=>{render();const end=ta.value.length;ta.setSelectionRan
 let rz;window.addEventListener('resize',()=>{cancelAnimationFrame(rz);rz=requestAnimationFrame(render)});
 if(document.fonts){Promise.all([document.fonts.load('16px "Special Elite"'),document.fonts.load('16px "Courier Prime"'),document.fonts.load(ITALIC)]).then(()=>{fontsReady=true;render()}).catch(()=>{fontsReady=true;render()})}
 (async()=>{downloads={save:({filename,data})=>{const blob=data instanceof Blob?data:new Blob([data]);const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);return Promise.resolve({status:'saved'})}};
-  ['pdf','png','savetxt','savemd'].forEach(id=>{$(id).disabled=!downloads;if(!downloads)$(id).title='Saving files is not available in this view'})})();
+  ['pdf','png','savetxt','savemd','savedocx'].forEach(id=>{$(id).disabled=!downloads;if(!downloads)$(id).title='Saving files is not available in this view'})})();
 })();
 </script>
 
