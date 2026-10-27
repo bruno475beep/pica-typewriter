@@ -1467,10 +1467,11 @@ function askName(kind){
   d.showModal();f.focus();f.select();
 }
 $('fcancel').onclick=()=>$('namedlg').close('');
-$('namedlg').addEventListener('close',()=>{const d=$('namedlg');
-  if(d.returnValue==='ok'){const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').replace(/\s+/g,' ').trim()||baseName();
-    if(n.length)openedName=n;EXPORTS[saveKind](n+'.'+EXT(saveKind))}
-  d.returnValue='';ta.focus({preventScroll:true})});
+/* run the save straight from the submit, so it never waits on the dialog's close event */
+$('namedlg').querySelector('form').addEventListener('submit',e=>{e.preventDefault();
+  const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').replace(/\s+/g,' ').trim()||baseName();
+  $('namedlg').close();if(n.length)openedName=n;EXPORTS[saveKind](n+'.'+EXT(saveKind));ta.focus({preventScroll:true})});
+$('namedlg').addEventListener('close',()=>ta.focus({preventScroll:true}));
 
 
 /* ---------- boot ---------- */
