@@ -190,7 +190,8 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <div class="popwrap"><button id="save" class="primary" disabled aria-haspopup="menu" aria-expanded="false" aria-controls="savemenu">Save &#9662;</button>
       <div class="pop menu" id="savemenu" role="menu" hidden>
         <button role="menuitem" data-kind="pdf" title="The sheets as they look here">PDF <span class="ext">.pdf</span></button>
-        <button role="menuitem" data-kind="docx" title="Word document to keep working on: text, styles, header and footer, in the typewriter font. No ribbon wear, aged paper or coffee.">Word <span class="ext">.docx</span></button>
+        <button role="menuitem" data-kind="docxf" title="Word in the house style for legal documents: Georgia 11, justified, 1.2 spacing, 2.5/3 cm margins, page numbers from page 2, and typed 1. 1.1 (a) (i) numbers turned into automatic numbering">Word, formatted <span class="ext">.docx</span></button>
+        <button role="menuitem" data-kind="docx" title="Word document to keep working on: text, styles, header and footer, in the typewriter font. No ribbon wear, aged paper or coffee.">Word, unformatted <span class="ext">.docx</span></button>
         <button role="menuitem" data-kind="md" title="Bold, italic and underline kept">Markdown <span class="ext">.md</span></button>
         <button role="menuitem" data-kind="txt" title="Plain text, no styles">Text <span class="ext">.txt</span></button>
       </div></div>
@@ -1305,23 +1306,172 @@ async function buildDocx(){
   return zipStore(files,CT+'document');
 }
 
+/* ---------- formatted Word ---------- */
+/* House style for legal documents, applied only when saving: Georgia 11, justified, 1.2 line spacing, A4 with 2.5/3 cm margins,
+   page numbers from the second page, and paragraph numbers typed by hand (1. 1.1 1.1.1 1.1.1.1 (a) (1) (i) (A)) turned into
+   Word's automatic eight-level numbering with the prescribed indents. The rest is read from the text: section titles,
+   block quotes, [•] blanks, [XX: comments] and ("Defined Terms"). */
+const TW=cm=>Math.round(cm*566.929);
+const NUMFMT=[['decimal','%1.'],['decimal','%1.%2'],['decimal','%1.%2.%3'],['decimal','%1.%2.%3.%4'],['lowerLetter','(%5)'],['decimal','(%6)'],['lowerRoman','(%7)'],['upperLetter','(%8)']];
+const NUMAT=[0,0,1.25,2.5],NUMTAB=[2.5,2.5,3.75,5];   // levels 1-4: number and text at, tab stop (cm); 5-8 follow their parent
+const ROMAN=n=>{let s='';for(const [v,r] of [[1000,'m'],[900,'cm'],[500,'d'],[400,'cd'],[100,'c'],[90,'xc'],[50,'l'],[40,'xl'],[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']])while(n>=v){s+=r;n-=v}return s};
+function typedNumber(s,st){
+  let m;
+  if((m=s.match(/^\d+\.\d+\.\d+\.\d+\.?(?:[ \t]+|$)/)))return[3,m[0].length];
+  if((m=s.match(/^\d+\.\d+\.\d+\.?(?:[ \t]+|$)/)))return[2,m[0].length];
+  if((m=s.match(/^\d+\.\d+\.?(?:[ \t]+|$)/)))return[1,m[0].length];
+  if((m=s.match(/^\d+\.[ \t]+/)))return[0,m[0].length];
+  if(!(m=s.match(/^\(([a-zA-Z]{1,6}|\d{1,3})\)[ \t]+/)))return null;
+  const t=m[1],n=m[0].length;
+  if(/^\d+$/.test(t))return[5,n];
+  if(/^[A-Z]$/.test(t))return[7,n];
+  if(!/^[a-z]+$/.test(t))return null;
+  const roman=/^[ivxlcdm]+$/.test(t);
+  if(t.length>1)return roman?[6,n]:null;
+  if(!roman)return[4,n];
+  /* a lone i, v, x…: the next letter of an (a) series, or else a roman numeral */
+  if(st.l5&&t.charCodeAt(0)===st.l5.charCodeAt(0)+1)return[4,n];
+  if(t==='i'||ROMAN(st.l7+1)===t)return[6,n];
+  return[4,n];
+}
+async function buildDocxFormatted(){
+  const NS='xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const HEAD='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n',REL='http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
+  const CT='application/vnd.openxmlformats-officedocument.wordprocessingml.';
+  /* character flags: 1 bold, 2 underline, 4 italic (as typed) + 8 small caps, 16 yellow highlight, 32 all caps */
+  const runs=chars=>{let out='',buf='',rf=-1;
+    const flush=()=>{if(!buf)return;let pr='';
+      if(rf&1)pr+='<w:b/>';if(rf&4)pr+='<w:i/>';if(rf&32)pr+='<w:caps/>';if(rf&8)pr+='<w:smallCaps/>';
+      if(rf&16)pr+='<w:highlight w:val="yellow"/>';if(rf&2)pr+='<w:u w:val="single"/>';
+      out+='<w:r>'+(pr?'<w:rPr>'+pr+'</w:rPr>':'')+buf.split('\t').map(x=>x?'<w:t xml:space="preserve">'+xesc(x)+'</w:t>':'').join('<w:tab/>')+'</w:r>';buf=''};
+    for(const c of chars){if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+  /* lines as typed */
+  const t=ta.value,lines=[];let cur=[],brk=false;
+  for(let i=0;i<t.length;){const ch=t[i];if(isM(ch)){i++;continue}
+    const f=isM(t[i+1])?t.charCodeAt(i+1)-0xE000:0;let j=i+1;while(isM(t[j]))j++;
+    if(ch==='\n'||ch==='\f'){lines.push({chars:cur,brk});cur=[];brk=ch==='\f'}
+    else if(ch!=='\r')cur.push({ch,f});
+    i=j}
+  lines.push({chars:cur,brk});
+  const st={l5:'',l7:0},textAt=[0,0,0,0,0,0,0,0],seen=new Set();let lastLvl=-1,prevBlank=true,series=0;
+  const paras=lines.map(L=>{
+    let chars=L.chars;const P={brk:L.brk,blank:false,keep:false};
+    let lead=0,k=0;while(k<chars.length&&(chars[k].ch===' '||chars[k].ch==='\t')){lead+=chars[k].ch==='\t'?5:1;k++}
+    chars=chars.slice(k);let s=chars.map(c=>c.ch).join('');
+    if(!s.trim()){P.blank=true;P.chars=[];prevBlank=true;return P}
+    const num=typedNumber(s,st);
+    if(num){const [lv,n]=num;let c=n;while(c<chars.length&&(chars[c].ch===' '||chars[c].ch==='\t'))c++;
+      chars=chars.slice(c);s=s.slice(c);P.lvl=lv;
+      if(lv<4){textAt[lv]=NUMAT[lv];for(let x=lv+1;x<8;x++)textAt[x]=-1;st.l5='';st.l7=0;P.at=NUMAT[lv];P.tab=NUMTAB[lv]}
+      else{/* (a)-(A): the number sits where the text of the level above starts, the text 1.25 cm further in */
+        let parent=0;for(let x=lv-1;x>=0;x--)if(textAt[x]>=0){parent=textAt[x];break}
+        P.at=parent;P.tab=parent+1.25;textAt[lv]=P.tab;for(let x=lv+1;x<8;x++)textAt[x]=-1}
+      if(lv===4){const m=L.chars.map(c=>c.ch).join('').trim().match(/^\(([a-z])\)/);st.l5=m?m[1]:st.l5;st.l7=0}
+      if(lv===6){const m=L.chars.map(c=>c.ch).join('').trim().match(/^\(([ivxlcdm]+)\)/);if(m){let v=0;for(let q=1;q<4000;q++)if(ROMAN(q)===m[1]){v=q;break}st.l7=v}}
+      /* each run of (a)-(A) items is its own list, restarted, so Word never counts the levels it skipped */
+      if(lv>=4&&lastLvl<4){P.firstOfSeries=true;series++}
+      P.numId=lv<4?1:1+series;P.ilvl=lv<4?lv:lv-4;
+      lastLvl=lv;
+      const plain=s.trim();
+      if(lv===0&&plain.length<=90&&!/[.:;,]$/.test(plain)){P.title=true;P.keep=true;chars=chars.map(c=>({ch:c.ch,f:c.f|1|32}))}
+      else if(lv<4&&plain.length<=90&&!/[.:;,]$/.test(plain))P.keep=true;
+    }else{
+      const len=s.replace(/\s+$/,'').length;
+      if(/^[“"]/.test(s)&&prevBlank&&lead<8){P.quote=true;chars=chars.map(c=>({ch:c.ch,f:c.f|4}))}
+      else if(lead>=8){const mid=lead+len/2;
+        if(Math.abs(mid-G.cols/2)<=6)P.jc='center';else if(lead+len>=G.cols-2)P.jc='right';else P.indent=lead*0.254}
+    }
+    /* [•] blanks and [XX: comments] in yellow; a described blank also bold small caps; (“Defined Term”) bold the first time */
+    const flag=(a,b,f)=>{for(let x=a;x<b&&x<chars.length;x++)chars[x]={ch:chars[x].ch,f:chars[x].f|f}};
+    s=chars.map(c=>c.ch).join('');let m;
+    const br=/\[([^\[\]\n]{1,120})\]/g;
+    while((m=br.exec(s))){const inner=m[1],a=m.index,b=a+m[0].length;
+      if(/^(\.\.\.|…|sic|\d+|\.{3})$/i.test(inner.trim()))continue;
+      if(inner.trim()==='•')flag(a,b,16);
+      else if(/^[A-ZÀ-Ý]{2,6}\s*:/.test(inner))flag(a+1,b-1,1|8|16);
+      else{flag(a,b,16);flag(a+1,b-1,1|8)}}
+    const dt=/\(([“"])([^”"\n()]{1,60})([”"])\)/g;
+    while((m=dt.exec(s))){const term=m[2].trim().toLowerCase();if(seen.has(term))continue;seen.add(term);flag(m.index+2,m.index+2+m[2].length,1)}
+    /* enumerations inside running text — (a), (1), (i), (A) — bold, tied to the next word by a non-breaking space */
+    const en=/(^|[\s,;:—–-])(\((?:[a-z]|\d{1,2}|[ivx]{1,4}|[A-Z])\))[ \u00a0](?=\S)/g;
+    while((m=en.exec(s))){const a=m.index+m[1].length,b=a+m[2].length;flag(a,b,1);chars[b]={ch:'\u00a0',f:chars[b].f}}
+    P.chars=chars;prevBlank=false;return P;
+  });
+  while(paras.length>1&&paras[paras.length-1].blank&&!paras[paras.length-1].brk)paras.pop();
+  /* keep titles with what follows (through blank lines), and the paragraph before a series of (a)-(A) items with it */
+  for(let i=0;i<paras.length;i++){
+    if(paras[i].firstOfSeries){for(let j=i-1;j>=0;j--){paras[j].keep=true;if(!paras[j].blank)break}}}
+  for(let i=0;i<paras.length;i++)if(paras[i].keep)for(let j=i+1;j<paras.length&&paras[j].blank;j++)paras[j].keep=true;
+  const body=paras.map(P=>{let pp='';
+    if(P.keep)pp+='<w:keepNext/>';if(P.brk)pp+='<w:pageBreakBefore/>';
+    if(P.lvl!=null){pp+='<w:numPr><w:ilvl w:val="'+P.ilvl+'"/><w:numId w:val="'+P.numId+'"/></w:numPr>';
+      if(P.lvl>=4)pp+='<w:tabs><w:tab w:val="num" w:pos="'+TW(P.tab)+'"/></w:tabs><w:ind w:left="'+TW(P.tab)+'" w:hanging="'+TW(P.tab-P.at)+'"/>'}
+    else if(P.quote)pp+='<w:ind w:left="'+TW(2.5)+'"/>';
+    else if(P.indent)pp+='<w:ind w:left="'+TW(P.indent)+'"/>';
+    if(P.jc)pp+='<w:jc w:val="'+P.jc+'"/>';
+    if(P.title)pp+='<w:rPr><w:b/><w:caps/></w:rPr>';
+    return'<w:p>'+(pp?'<w:pPr>'+pp+'</w:pPr>':'')+runs(P.chars)+'</w:p>'}).join('');
+  const lvl=(i,fmt,txt,at,tab,left)=>'<w:lvl w:ilvl="'+i+'"><w:start w:val="1"/><w:numFmt w:val="'+fmt+'"/><w:lvlText w:val="'+txt+'"/><w:lvlJc w:val="left"/>'+
+      '<w:pPr><w:tabs><w:tab w:val="num" w:pos="'+TW(tab)+'"/></w:tabs><w:ind w:left="'+TW(left)+'" w:hanging="'+TW(left-at)+'"/></w:pPr></w:lvl>';
+  const absMain=NUMFMT.slice(0,4).map(([f,x],i)=>lvl(i,f,x,NUMAT[i],NUMTAB[i],NUMAT[i])).join('');
+  const absItems=NUMFMT.slice(4).map(([f,x],i)=>lvl(i,f,x.replace(/%\d/,'%'+(i+1)),2.5+1.25*i,3.75+1.25*i,3.75+1.25*i)).join('');
+  let nums='<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>';
+  for(let n=1;n<=series;n++)nums+='<w:num w:numId="'+(1+n)+'"><w:abstractNumId w:val="1"/>'+[0,1,2,3].map(i=>'<w:lvlOverride w:ilvl="'+i+'"><w:startOverride w:val="1"/></w:lvlOverride>').join('')+'</w:num>';
+  const numbering=HEAD+'<w:numbering '+NS+'><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="multilevel"/>'+absMain+'</w:abstractNum>'+
+    '<w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="multilevel"/>'+absItems+'</w:abstractNum>'+nums+'</w:numbering>';
+  const hp=(S.hdr||[]).filter(v=>v&&v.trim()).map(v=>'<w:p><w:r><w:t xml:space="preserve">'+xesc(v.replace(/\{pages?\}/gi,''))+'</w:t></w:r></w:p>').join('');
+  const hdr=hp?HEAD+'<w:hdr '+NS+'>'+hp+'</w:hdr>':'';
+  const ftrPage=HEAD+'<w:ftr '+NS+'><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:fldSimple w:instr=" PAGE "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p></w:ftr>';
+  const ftrFirst=HEAD+'<w:ftr '+NS+'><w:p/></w:ftr>';
+  const doc=HEAD+'<w:document '+NS+'><w:body>'+body+'<w:sectPr>'+
+    (hdr?'<w:headerReference w:type="default" r:id="rIdH"/><w:headerReference w:type="first" r:id="rIdH1"/>':'')+
+    '<w:footerReference w:type="default" r:id="rIdF"/><w:footerReference w:type="first" r:id="rIdF1"/>'+
+    '<w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="'+TW(2.5)+'" w:right="'+TW(3)+'" w:bottom="'+TW(2.5)+'" w:left="'+TW(3)+'" w:header="'+TW(1.25)+'" w:footer="'+TW(1.25)+'" w:gutter="0"/>'+
+    '<w:titlePg/></w:sectPr></w:body></w:document>';
+  const styles=HEAD+'<w:styles '+NS+'><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia" w:cs="Georgia" w:eastAsia="Georgia"/>'+
+    '<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault>'+
+    '<w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="288" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr></w:pPrDefault></w:docDefaults>'+
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+  const files=[
+    {name:'[Content_Types].xml',data:HEAD+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'+
+      '<Override PartName="/word/document.xml" ContentType="'+CT+'document.main+xml"/><Override PartName="/word/styles.xml" ContentType="'+CT+'styles+xml"/>'+
+      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/><Override PartName="/word/numbering.xml" ContentType="'+CT+'numbering+xml"/>'+
+      '<Override PartName="/word/footer1.xml" ContentType="'+CT+'footer+xml"/><Override PartName="/word/footer2.xml" ContentType="'+CT+'footer+xml"/>'+
+      (hdr?'<Override PartName="/word/header1.xml" ContentType="'+CT+'header+xml"/><Override PartName="/word/header2.xml" ContentType="'+CT+'header+xml"/>':'')+'</Types>'},
+    {name:'_rels/.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+REL+'officeDocument" Target="word/document.xml"/></Relationships>'},
+    {name:'word/document.xml',data:doc},
+    {name:'word/_rels/document.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/><Relationship Id="rIdN" Type="'+REL+'numbering" Target="numbering.xml"/>'+
+      '<Relationship Id="rIdF" Type="'+REL+'footer" Target="footer1.xml"/><Relationship Id="rIdF1" Type="'+REL+'footer" Target="footer2.xml"/>'+
+      (hdr?'<Relationship Id="rIdH" Type="'+REL+'header" Target="header1.xml"/><Relationship Id="rIdH1" Type="'+REL+'header" Target="header2.xml"/>':'')+'</Relationships>'},
+    {name:'word/styles.xml',data:styles},
+    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
+    {name:'word/numbering.xml',data:numbering},
+    {name:'word/footer1.xml',data:ftrPage},{name:'word/footer2.xml',data:ftrFirst}];
+  if(hdr)files.push({name:'word/header1.xml',data:hdr},{name:'word/header2.xml',data:hdr});
+  return zipStore(files,CT+'document');
+}
+
 /* ---------- save menu & file name ---------- */
 const EXPORTS={
   pdf:savePdf,
   docx:async n=>{try{await offer(n,await buildDocx())}catch(e){toast('The Word file could not be made')}},
+  docxf:async n=>{try{await offer(n,await buildDocxFormatted())}catch(e){toast('The Word file could not be made')}},
   md:n=>offer(n,toMD(ta.value)),
   txt:n=>offer(n,strip(ta.value))};
-let saveKind='pdf';
+let saveKind='pdf';const EXT=k=>k==='docxf'?'docx':k;
 function askName(kind){
   saveKind=kind;const d=$('namedlg'),f=$('fname');
-  $('fext').textContent='.'+kind;f.value=baseName();
+  $('fext').textContent='.'+EXT(kind);f.value=baseName();
   d.showModal();f.focus();f.select();
 }
 $('fcancel').onclick=()=>$('namedlg').close('');
-$('namedlg').addEventListener('close',()=>{const d=$('namedlg');
-  if(d.returnValue==='ok'){const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').replace(/\s+/g,' ').trim()||baseName();
-    if(n.length)openedName=n;EXPORTS[saveKind](n+'.'+saveKind)}
-  d.returnValue='';ta.focus({preventScroll:true})});
+/* run the save straight from the submit, so it never waits on the dialog's close event */
+$('namedlg').querySelector('form').addEventListener('submit',e=>{e.preventDefault();
+  const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').replace(/\s+/g,' ').trim()||baseName();
+  $('namedlg').close();if(n.length)openedName=n;EXPORTS[saveKind](n+'.'+EXT(saveKind));ta.focus({preventScroll:true})});
+$('namedlg').addEventListener('close',()=>ta.focus({preventScroll:true}));
 
 
 /* ---------- boot ---------- */
