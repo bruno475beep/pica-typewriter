@@ -154,7 +154,6 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <div class="grp"><label for="wear">Wear</label><input type="range" id="wear" min="0" max="100" step="5"></div>
     <label class="chk" title="Small specks and marks of wear across the sheet. Tick again for new ones."><input type="checkbox" id="aged">Aged paper</label>
     <div class="grp"><label for="coffee">Coffee</label><select id="coffee"><option value="none">None</option><option value="single">Single spot</option><option value="rings">Random rings</option></select><button id="reroll" title="New coffee marks" aria-label="New coffee marks">↻</button></div>
-    <button id="hard" aria-pressed="false" title="No erasing: Backspace moves the carriage back, typing strikes over, bold means striking twice">Hard mode</button>
     <button id="sound" aria-pressed="true">Sound on</button>
     <button id="center" aria-pressed="true" title="Keep the typing line in the middle of the screen">Carriage view</button>
     <button id="fs" title="Full screen">Full screen</button>
@@ -620,19 +619,15 @@ const INKS={black:'#1c1b1f',blue:'#1f2f63',red:'#9e1f1c'};
 const FONTS={worn:'"Special Elite","Courier Prime","Courier New",monospace',vworn:'"Special Elite","Courier Prime","Courier New",monospace',clean:'"Courier Prime","Courier New",monospace'};
 const ITALIC='italic '+16+'px "Courier Prime","Courier New",monospace';
 const PAPERC={white:'#fcfcf9',ivory:'#f6f0df',manila:'#eedfb9',canary:'#f7eca2',pink:'#f5dcdf',blue:'#dde8f2',green:'#e0ecd9'};
-const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true,hard:false,coffee:false,cmode:'rings',aged:false,cseed:1,dseed:1,hdr:['',''],ftr:['','']};
+const S={font:'worn',ink:'black',spacing:1,paper:'a4',wear:55,sound:true,pc:'white',center:true,bar:true,coffee:false,cmode:'rings',aged:false,cseed:1,dseed:1,hdr:['',''],ftr:['','']};
 /* Styles live inside the hidden text as one invisible marker right after a character:
    U+E000 + flags (1 bold, 2 underline, 4 italic). Native undo/redo then covers styling too. */
-/* Hard mode overstrikes: each extra letter struck on a cell rides after it as U+E800 + its code. */
-const isM=ch=>{if(ch===undefined)return false;const c=ch.charCodeAt(0);return(c>=0xE000&&c<=0xE007)||(c>=0xE800&&c<=0xF7FF)};
-const isO=ch=>{if(ch===undefined)return false;const c=ch.charCodeAt(0);return c>=0xE800&&c<=0xF7FF};
-const OV=ch=>String.fromCharCode(0xE800+ch.charCodeAt(0));
-function flagsAfter(t,j){let f=0;while(isM(t[j])){if(!isO(t[j]))f=t.charCodeAt(j)-0xE000;j++}return f}
-function oversAfter(t,j){let o='';while(isM(t[j])){if(isO(t[j]))o+=String.fromCharCode(t.charCodeAt(j)-0xE800);j++}return o}
+const isM=ch=>{if(ch===undefined)return false;const c=ch.charCodeAt(0);return c>=0xE000&&c<=0xE007};
 const MK=f=>String.fromCharCode(0xE000+f);
-const strip=s=>s.replace(/[\uE000-\uE007\uE800-\uF7FF]/g,'');
+const strip=s=>s.replace(/[-]/g,'');
 const F=(s,f)=>[...s].map(ch=>ch==='\n'?ch:ch+MK(f)).join('');
 let typeStyle=0,pinned=-1;
+/* Text typed while Hard mode existed lives under v4 and may carry overstrike markers (U+E800+); they are dropped on load. */
 const KEY='pica-typewriter-v4',OLDKEY='pica-typewriter-v2';
 let G,L,sc=1,fontsReady=false,desiredCol=null,anchor=0,downloads=null;
 const sheets=[];
@@ -645,7 +640,7 @@ function sampleText(){
 
 /* ---------- storage ---------- */
 /* v2 keeps its own store so the original page never sees settings it does not know; on first visit it borrows v1's text and settings. */
-function load(){try{const v=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem(OLDKEY)||'null');if(v){Object.assign(S,v.s||{});if(v.v!==2)S.sound=true;return typeof v.t==='string'?v.t:null}}catch(e){}return null}
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem(OLDKEY)||'null');if(v){Object.assign(S,v.s||{});if(v.v!==2)S.sound=true;return typeof v.t==='string'?v.t.replace(/[-]/g,''):null}}catch(e){}return null}
 let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify({v:2,t:ta.value,s:S}))}catch(e){}},350)}
 
 /* ---------- geometry & layout ---------- */
@@ -668,9 +663,9 @@ function layout(text,g){
   const lines=new Map(),items=[];
   for(let k=0;k<=n;k++){const q=pos[k],key=q.p*100000+q.r,rg=lines.get(key);if(rg)rg[1]=k;else lines.set(key,[k,k]);
     if(k<n){const ch=text[k];if(isM(ch)||'\n\f\t\r'.includes(ch))continue;
-      const f=flagsAfter(text,k+1),ov=oversAfter(text,k+1);
+      const f=isM(text[k+1])?text.charCodeAt(k+1)-0xE000:0;
       if(ch===' '&&(!(f&2)||q.c>=g.cols))continue;
-      (items[q.p]||(items[q.p]=[])).push({ch,code:ch.codePointAt(0),r:q.r,c:q.c,f,ov})}}
+      (items[q.p]||(items[q.p]=[])).push({ch,code:ch.codePointAt(0),r:q.r,c:q.c,f})}}
   return{pos,lines,items,pages:p+1};
 }
 
@@ -770,9 +765,6 @@ function eachStrike(p,items,t,emit){
       one(it.ch,it.code,h,x,y,0,0,fk);
       if(it.f&1){const hb=hash(h,66,6,1);one(it.ch,it.code,hb,x,y,.55+((hb>>>4)&255)/255*.3,((hb>>>12)&255)/255*.3-.15,fk)}}
     if(it.f&2)one('_',95,hash(h,95,7,5),x,y,0,0,'main');
-    if(it.ov){const fk=(it.f&4)?'italic':'main';[...it.ov].forEach((o,n)=>{const oc=o.codePointAt(0),ho=hash(h,oc,8+n,3);
-      /* struck again by hand: never quite on the same spot */
-      one(o,oc,ho,x,y,(((ho>>>4)&255)/255-.5)*.9,(((ho>>>12)&255)/255-.5)*.5,fk)})}
   }
   for(const ln of hfLines(p)){const chs=[...ln.v],x0=G.w/2-chs.length*CW/2+CW/2;
     chs.forEach((ch,c)=>{if(ch===' ')return;const code=ch.codePointAt(0);one(ch,code,hash(p+1,9000+ln.k,c,code),x0+c*CW,ln.y,0,0,'main')})}
@@ -813,7 +805,7 @@ function render(){
   const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,S.coffee,S.cmode,S.aged,S.cseed,S.dseed,JSON.stringify([S.hdr,S.ftr]),L.pages,fontsReady,(sc*dpr).toFixed(3)].join();
   sheets.forEach((s,p)=>{
     s.el.style.width=G.w*sc+'px';s.el.style.height=G.h*sc+'px';s.cv.style.width=G.w*sc+'px';s.cv.style.height=G.h*sc+'px';
-    const items=L.items[p]||[];let sig=key+'#';for(const it of items)sig+=it.ch+it.ov+it.r+'.'+it.c+'.'+it.f+'|';
+    const items=L.items[p]||[];let sig=key+'#';for(const it of items)sig+=it.ch+it.r+'.'+it.c+'.'+it.f+'|';
     if(s.sig!==sig){drawPage(s.cv,p,items,sc*dpr);s.sig=sig}
   });
   $('st-pages').textContent=L.pages;$('st-cols').textContent=G.cols;$('st-chars').textContent=strip(ta.value).replace(/[\n\f]/g,'').length.toLocaleString('en-US');
@@ -917,17 +909,16 @@ function layoutScale(){
 function norm(i){const t=ta.value;while(i<t.length&&isM(t[i]))i++;return i}
 function prevB(i){const t=ta.value;let j=i-1;while(j>0&&isM(t[j]))j--;return Math.max(0,j)}
 function nextB(i){const t=ta.value;let j=Math.min(t.length,i+1);while(j<t.length&&isM(t[j]))j++;return j}
-function styleAt(i){const t=ta.value;let j=i-1;while(j>=0&&isM(t[j]))j--;if(j<0||t[j]==='\n'||t[j]==='\f')return 0;return flagsAfter(t,j+1)}
-function clusters(s,e){const t=ta.value,out=[];let i=s;while(i<e){const ch=t[i];if(isM(ch)){i++;continue}let j=i+1;const f=flagsAfter(t,j),ov=oversAfter(t,j);while(isM(t[j]))j++;out.push({ch,f,ov});i=j}return out}
+function styleAt(i){const t=ta.value;let j=i-1;while(j>=0&&isM(t[j]))j--;if(j<0||t[j]==='\n'||t[j]==='\f')return 0;return isM(t[j+1])?t.charCodeAt(j+1)-0xE000:0}
+function clusters(s,e){const t=ta.value,out=[];let i=s;while(i<e){const ch=t[i];if(isM(ch)){i++;continue}let f=0,j=i+1;if(isM(t[j])){f=t.charCodeAt(j)-0xE000;while(isM(t[j]))j++}out.push({ch,f});i=j}return out}
 function selFlags(s,e){const cl=clusters(s,e).filter(c=>!' \n\f\r\t'.includes(c.ch));if(!cl.length)return 0;return cl.reduce((a,c)=>a&c.f,7)}
 function syncFmt(s,e){const f=s===e?typeStyle:selFlags(s,e);[['fmt-b',1],['fmt-i',4],['fmt-u',2]].forEach(([id,b])=>{const el=$(id);el.classList.toggle('on',!!(f&b));el.setAttribute('aria-pressed',!!(f&b))})}
 function toggleStyle(bit){
-  if(S.hard&&bit===1){hardNo('Hard mode: for bold, Backspace and strike the letter again');return}
   ta.focus({preventScroll:true});
   const s=norm(ta.selectionStart),e=norm(ta.selectionEnd);
   if(s===e){typeStyle^=bit;pinned=s;syncFmt(s,e);return}
   const all=!!(selFlags(s,e)&bit);let out='';
-  for(const c of clusters(s,e)){if('\n\f\r'.includes(c.ch)){out+=c.ch;continue}const f=all?c.f&~bit:c.f|bit;out+=c.ch+(f?MK(f):'')+[...c.ov].map(OV).join('')}
+  for(const c of clusters(s,e)){if('\n\f\r'.includes(c.ch)){out+=c.ch;continue}const f=all?c.f&~bit:c.f|bit;out+=c.ch+(f?MK(f):'')}
   ta.setSelectionRange(s,e);insert(out);setSel(s,s+out.length);
 }
 
@@ -988,36 +979,15 @@ let inserting=false;
 function insert(str){ta.focus({preventScroll:true});inserting=true;let ok=false;try{ok=document.execCommand('insertText',false,str)}finally{inserting=false}
   if(!ok){ta.setRangeText(str,ta.selectionStart,ta.selectionEnd,'end');onInput({inputType:'insertText'})}}
 function del(a,b){ta.setSelectionRange(a,b);if(!document.execCommand('delete')){ta.setRangeText('',a,b,'end');onInput({})}}
-/* Hard mode: the carriage only moves; nothing typed can be taken back. */
-const lineEnd=i=>{const t=ta.value;return i>=t.length||t[i]==='\n'||t[i]==='\f'};
-function hardChar(ch){
-  const t=ta.value,i=norm(ta.selectionStart);
-  if(ch==='\n'||lineEnd(i)){ta.setSelectionRange(i,i);insert(ch==='\n'?ch:ch+((typeStyle&~1)?MK(typeStyle&~1):''));return}
-  let j=i+1;while(isM(t[j]))j++;
-  if(ch===' '){setSel(j,j);return}
-  if(t[i]===' '){ta.setSelectionRange(i,j);insert(ch+((typeStyle&~1)?MK(typeStyle&~1):''));return}
-  if(ch.charCodeAt(0)>0xFFF){setSel(j,j);return}
-  ta.setSelectionRange(j,j);insert(OV(ch));
-}
-function hardNo(m){toast(m||'Hard mode: nothing can be erased')}
 ta.addEventListener('beforeinput',e=>{
-  if(S.hard&&!inserting){const it=e.inputType||'';
-    if(it==='insertText'&&e.data){e.preventDefault();const s0=ta.selectionStart;if(ta.selectionEnd!==s0)ta.setSelectionRange(s0,s0);for(const ch of e.data)hardChar(ch);return}
-    if(it==='insertLineBreak'||it==='insertParagraph'){e.preventDefault();hardReturn();return}
-    if(it.startsWith('delete')||it.startsWith('history')){e.preventDefault();hardNo();return}
-    if(it==='insertFromPaste'||it==='insertFromDrop'){e.preventDefault();hardNo('Hard mode: no pasting, type it');return}
-    if(ta.selectionStart!==ta.selectionEnd){e.preventDefault();return}
-  }
   if(inserting||!typeStyle||e.inputType!=='insertText'||!e.data)return;
   e.preventDefault();let out='';for(const ch of e.data)out+=ch==='\n'?ch:ch+MK(typeStyle);insert(out);
 });
 ta.addEventListener('copy',e=>{const s=ta.selectionStart,en=ta.selectionEnd;if(s===en||!e.clipboardData)return;e.preventDefault();const raw=ta.value.slice(s,en);
   e.clipboardData.setData('text/plain',strip(raw).replace(/\f/g,'\n\n'));try{e.clipboardData.setData('text/x-pica',raw)}catch(_){}});
-ta.addEventListener('cut',e=>{if(S.hard){e.preventDefault();hardNo();return}const s=ta.selectionStart,en=ta.selectionEnd;if(s===en||!e.clipboardData)return;e.preventDefault();const raw=ta.value.slice(s,en);
+ta.addEventListener('cut',e=>{const s=ta.selectionStart,en=ta.selectionEnd;if(s===en||!e.clipboardData)return;e.preventDefault();const raw=ta.value.slice(s,en);
   e.clipboardData.setData('text/plain',strip(raw).replace(/\f/g,'\n\n'));try{e.clipboardData.setData('text/x-pica',raw)}catch(_){}del(s,en)});
-ta.addEventListener('paste',e=>{if(S.hard){e.preventDefault();hardNo('Hard mode: no pasting, type it');return}let raw='';try{raw=e.clipboardData.getData('text/x-pica')}catch(_){}if(raw){e.preventDefault();insert(raw)}});
-function hardReturn(){const t=ta.value;let i=norm(ta.selectionStart);while(!lineEnd(i))i++;
-  if(i>=t.length){ta.setSelectionRange(i,i);insert('\n')}else{setSel(i+1,i+1)}sReturn();scrollCaret()}
+ta.addEventListener('paste',e=>{let raw='';try{raw=e.clipboardData.getData('text/x-pica')}catch(_){}if(raw){e.preventDefault();insert(raw)}});
 function onInput(e){
   render();save();
   if(e&&e.inputType==='insertText'&&ta.selectionStart===ta.selectionEnd){const q=L.pos[ta.selectionEnd];if(q.c===G.cols-8){sBell();const m=$('marker');m.classList.remove('ring');void m.offsetWidth;m.classList.add('ring')}}
@@ -1026,15 +996,6 @@ function onInput(e){
 ta.addEventListener('input',e=>{desiredCol=null;onInput(e)});
 ta.addEventListener('keydown',e=>{
   const k=e.key;
-  if(S.hard&&!e.altKey){
-    if(k==='Backspace'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();desiredCol=null;const f=ta.selectionStart,q=L.pos[f];if(q.c>0)setSel(prevB(f),prevB(f));sClick(.45);return}
-    if(k==='Delete'||((e.ctrlKey||e.metaKey)&&(k==='Backspace'||k.toLowerCase()==='x'))){e.preventDefault();hardNo();return}
-    if((e.ctrlKey||e.metaKey)&&(k.toLowerCase()==='z'||k.toLowerCase()==='y')){e.preventDefault();hardNo('Hard mode: no undo');return}
-    if((e.ctrlKey||e.metaKey)&&k.toLowerCase()==='b'){e.preventDefault();hardNo('Hard mode: for bold, Backspace and strike the letter again');return}
-    if(k==='Enter'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();hardReturn();return}
-    if(k==='Tab'&&!e.ctrlKey&&!e.metaKey){e.preventDefault();let i=norm(ta.selectionStart);const c=L.pos[i].c,n=5-(c%5);let m=0;
-      while(m<n&&!lineEnd(i)){i=nextB(i);m++}setSel(i,i);if(m<n)insert(' '.repeat(n-m));sClick();return}
-  }
   if(k==='ArrowUp'||k==='ArrowDown'){if(e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();vmove(k==='ArrowUp'?-1:1,e.shiftKey);return}
   desiredCol=null;
   if((k==='Home'||k==='End')&&!e.ctrlKey&&!e.metaKey){e.preventDefault();homeEnd(k==='End',e.shiftKey);return}
@@ -1069,8 +1030,6 @@ function syncControls(){
   document.querySelectorAll('.ink[data-pc]').forEach(b=>{b.classList.toggle('on',b.dataset.pc===S.pc);b.setAttribute('aria-pressed',b.dataset.pc===S.pc)});
   $('bar').classList.toggle('collapsed',!S.bar);$('showbar').hidden=S.bar;
   const cb=$('center');cb.classList.toggle('on',S.center);cb.setAttribute('aria-pressed',S.center);
-  const hb=$('hard');hb.classList.toggle('on',!!S.hard);hb.setAttribute('aria-pressed',!!S.hard);
-  ['fmt-b','undo','redo'].forEach(id=>$(id).disabled=!!S.hard);
   const sb=$('sound');sb.textContent=S.sound?'Sound on':'Sound off';sb.classList.toggle('on',S.sound);sb.setAttribute('aria-pressed',S.sound);
 }
 function setOpt(k,v){S[k]=v;syncControls();render();save()}
@@ -1090,8 +1049,6 @@ $('wear').oninput=e=>setOpt('wear',+e.target.value);
 document.querySelectorAll('.ink[data-ink]').forEach(b=>b.onclick=()=>setOpt('ink',b.dataset.ink));
 document.querySelectorAll('.ink[data-pc]').forEach(b=>b.onclick=()=>setOpt('pc',b.dataset.pc));
 [['fmt-b',1],['fmt-i',4],['fmt-u',2]].forEach(([id,b])=>{const el=$(id);el.addEventListener('pointerdown',e=>e.preventDefault());el.onclick=()=>toggleStyle(b)});
-$('hard').onclick=()=>{S.hard=!S.hard;syncControls();save();ta.focus({preventScroll:true});
-  toast(S.hard?'Hard mode: Backspace moves back without erasing. Strike a letter twice for bold.':'Hard mode off')};
 $('sound').onclick=()=>{S.sound=!S.sound;if(S.sound)actx();syncControls();save();if(S.sound)sClick()};
 function setBar(open){S.bar=open;syncControls();render();save();if(open)$('hidebar').focus({preventScroll:true});else ta.focus({preventScroll:true})}
 $('hidebar').onclick=()=>setBar(false);$('showbar').onclick=()=>setBar(true);
@@ -1103,7 +1060,7 @@ let clearT=null;
 $('clear').onclick=()=>{const b=$('clear');
   if(!clearT){b.textContent='Clear all text?';b.classList.add('warn');clearT=setTimeout(()=>{b.textContent='Clear';b.classList.remove('warn');clearT=null},3000);return}
   clearTimeout(clearT);clearT=null;b.textContent='Clear';b.classList.remove('warn');
-  openedName='';ta.focus({preventScroll:true});ta.select();inserting=true;let gone=false;try{gone=document.execCommand('delete')}finally{inserting=false}if(!gone){ta.value='';onInput()}
+  openedName='';ta.focus({preventScroll:true});ta.select();if(!document.execCommand('delete')){ta.value='';onInput()}
   toast('Sheet cleared. Undo brings the text back.');
 };
 $('copy').onclick=()=>{const txt=strip(ta.value).replace(/\f/g,'\n\n');
@@ -1122,14 +1079,14 @@ function toMD(t){
     if(core){if(f&4)core='_'+core+'_';if(f&1)core='**'+core+'**'}let o=m[1]+core+m[3];if(f&2)o='<u>'+o+'</u>';return o};
   let out='',run='',rf=0;const flush=()=>{out+=wrap(run,rf);run=''};
   let i=0;const n=t.length;
-  while(i<n){const ch=t[i];if(isM(ch)){i++;continue}let j=i+1,f=flagsAfter(t,j);if(oversAfter(t,j).includes(ch))f|=1;while(isM(t[j]))j++;
+  while(i<n){const ch=t[i];if(isM(ch)){i++;continue}let f=0,j=i+1;if(isM(t[j])){f=t.charCodeAt(j)-0xE000;while(isM(t[j]))j++}
     if(ch==='\n'||ch==='\f'||ch==='\r'){flush();rf=0;out+=ch==='\f'?BREAK:ch}
     else{if(f!==rf){flush();rf=f}run+=esc(ch)}
     i=j}
   flush();return out;
 }
 function fromMD(src){
-  src=src.replace(/\r\n?/g,'\n').replace(/[\uE000-\uE007\uE800-\uF7FF]/g,'').replace(/\n?<!--\s*pagebreak\s*-->\n?/gi,'\f');
+  src=src.replace(/\r\n?/g,'\n').replace(/[-]/g,'').replace(/\n?<!--\s*pagebreak\s*-->\n?/gi,'\f');
   const n=src.length;let out='',f=0,itok='',i=0;
   const add=c=>{out+=c;if(f&&c!=='\n'&&c!=='\f')out+=MK(f)};
   const has=(tok,from)=>{const k=src.indexOf(tok,from);if(k<0)return false;const pe=src.indexOf('\n\n',from);return pe<0||k<pe};

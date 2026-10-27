@@ -8,10 +8,8 @@ Fitas *Worn ribbon*, *Very worn ribbon* e *Clean*, e duas opções que se combin
 
 Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas em cada um, repetidas em todas as folhas; `{page}` e `{pages}` viram a numeração.
 
-**Hard mode** (botão na barra): nada se apaga. Backspace só recua o carro; o que você bater por cima cai sobre a letra que já estava lá. Negrito só batendo a letra de novo.
-
 Tudo roda num único arquivo `index.html`, sem servidor e sem instalação — pode baixá-lo e abrir offline. O texto fica guardado só no seu navegador.
 
 Atalhos: Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado · Ctrl+Z desfazer.
 
-Versões anteriores: [v1](https://bruno475beep.github.io/pica-typewriter/v1/) (a primeira), [v2](https://bruno475beep.github.io/pica-typewriter/v2/) (com os efeitos, sem cabeçalho e rodapé), [v3](https://bruno475beep.github.io/pica-typewriter/v3/) (com papel envelhecido mais forte) e [v3.1](https://bruno475beep.github.io/pica-typewriter/v3.1/) (sem Hard mode).
+Versões anteriores: [v1](https://bruno475beep.github.io/pica-typewriter/v1/) (a primeira), [v2](https://bruno475beep.github.io/pica-typewriter/v2/) (com os efeitos, sem cabeçalho e rodapé) e [v3](https://bruno475beep.github.io/pica-typewriter/v3/) (com papel envelhecido mais forte).
