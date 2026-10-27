@@ -10,7 +10,7 @@ Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas e
 
 **Save ▾**: um só botão para salvar em PDF, Word (.docx), Markdown ou texto; antes de salvar, uma caixa pede o nome do arquivo. **New document** começa uma folha em branco (o Undo traz o texto de volta) e **Ctrl+Enter** abre uma folha nova.
 
-**Word, formatted (.docx)**: padrão de documentos jurídicos — Georgia 11, justificado, entrelinhas 1,2, A4 com margens de 2,5/3 cm, número de página a partir da 2ª. Números digitados no começo da linha (`1.`, `1.1`, `1.1.1`, `1.1.1.1`, `(a)`, `(1)`, `(i)`, `(A)`) viram numeração automática do Word; títulos de 1º nível saem em negrito e caixa alta; citações em parágrafo próprio, recuadas e em itálico; `[•]` e `[comentários]` em amarelo; termos definidos (“Assim”) em negrito.
+**Word, formatted (.docx)**: padrão de documentos jurídicos — Georgia 11, justificado, entrelinhas 1,2, A4 com margens de 2,5/3 cm, número de página a partir da 2ª. Números digitados no começo da linha (`1.`, `1.1`, `1.1.1`, `1.1.1.1`, `(a)`, `(1)`, `(i)`, `(A)`) viram numeração automática do Word; títulos de 1º nível saem em negrito e caixa alta; citações em parágrafo próprio, recuadas e em itálico; `[•]` e `[comentários]` em amarelo; termos definidos, como (“Fundo”), em negrito.
 
 **Word, unformatted (.docx)**: um documento do Word para continuar trabalhando — texto, negrito, itálico, sublinhado, quebras de página, cabeçalho e rodapé (com numeração automática), papel e margens, na fonte Special Elite embutida no arquivo (ou Courier Prime, no modo *Clean*). Sai sem desgaste de fita, papel envelhecido ou café.
 
