@@ -156,6 +156,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
       <button id="fmt-i" title="Italic: italic type ball (Ctrl+I)" aria-pressed="false">I</button>
       <button id="fmt-u" title="Underline: underscored (Ctrl+U)" aria-pressed="false">U</button>
     </div>
+    <button id="fnote" title="Footnote: adds ^[ ] at the carriage; type the note between the brackets (Ctrl+Alt+N)">Footnote</button>
     <div class="grp"><span class="lbl">Sheet color</span>
       <div class="popwrap"><button class="ink pc cur" id="pccur" aria-haspopup="true" aria-expanded="false" aria-controls="pcpop" title="Sheet colour"></button>
       <div class="pop" id="pcpop" hidden><div class="inks" role="group" aria-label="Paper colour">
@@ -229,7 +230,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
   <span>Line <b id="st-line">1</b></span>
   <span>Column <b id="st-col">0</b> / <span id="st-cols">62</span></span>
   <span><b id="st-chars">0</b> characters</span>
-  <span class="hint">Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+Enter new page</span>
+  <span class="hint">Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+Alt+N footnote · Ctrl+Enter new page</span>
 </footer>
 <dialog id="namedlg" aria-labelledby="namettl">
   <form method="dialog">
@@ -667,7 +668,7 @@ const sheets=[];
 function sampleText(){
   const d=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const pad=' '.repeat(40);
-  return pad+d+'\n\nDear Reader,\n\nThis sheet was typed on a machine that never existed.\nEvery key strike lands on a fixed grid of ten characters\nto the inch, and each letter carries a slightly different\namount of ink.\n\nMistakes are forgiven here: Backspace erases, Ctrl+Z\nundoes, and you can click anywhere on the sheet to move\nthe carriage.\n\nPress Ctrl+B to '+F('strike a word twice',1)+', Ctrl+U to '+F('underscore',2)+'\nit, and Ctrl+I to swap in the '+F('italic type ball',4)+'.\n\nWhen the bell rings, the line is almost full.\n\n'+pad+'Sincerely,\n\n\n'+pad+'The Typist\n\n\n(Sample text. Press New document to start on a blank sheet.)';
+  return pad+d+'\n\nDear Reader,\n\nThis sheet was typed on a machine that never existed.\nEvery key strike lands on a fixed grid of ten characters\nto the inch, and each letter carries a slightly different\namount of ink.\n\nMistakes are forgiven here: Backspace erases, Ctrl+Z\nundoes, and you can click anywhere on the sheet to move\nthe carriage.\n\nPress Ctrl+B to '+F('strike a word twice',1)+', Ctrl+U to '+F('underscore',2)+'\nit, and Ctrl+I to swap in the '+F('italic type ball',4)+'.\n\nWhen the bell rings, the line is almost full.\n\nCtrl+Alt+N adds a footnote.^[Typed at the foot of the sheet, as on a real typewriter.]\n\n'+pad+'Sincerely,\n\n\n'+pad+'The Typist\n\n\n(Sample text. Press New document to start on a blank sheet.)';
 }
 
 /* ---------- storage ---------- */
@@ -677,28 +678,68 @@ let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localSto
 
 /* ---------- geometry & layout ---------- */
 function geom(){const P=PAPERS[S.paper];const pitch=FS*S.spacing;return{w:P.w,h:P.h,pitch,cols:Math.floor((P.w-2*MARGIN)/CW),rows:Math.floor((P.h-2*MARGIN-FS)/pitch)+1}}
+/* Footnotes are typed inline as ^[note text], on one line (brackets inside may nest). The body shows only the call
+   number; the note is typed at the foot of the same sheet under a short rule, and that sheet's body gets shorter. */
+function findNotes(text){const notes=new Map(),n=text.length;
+  for(let i=0;i<n-1;i++){if(text[i]!=='^'||text[i+1]!=='[')continue;let d=0,j=i+1;
+    for(;j<n;j++){const ch=text[j];if(ch==='\n'||ch==='\f'){j=-1;break}if(ch==='[')d++;else if(ch===']'&&--d===0)break}
+    if(j>0&&j<n){notes.set(i,j);i=j}}
+  return notes}
+const ZONE=50000;   // rows from ZONE up are lines of a sheet's footnote area (ZONE itself is the rule)
 function layout(text,g){
-  const n=text.length,pos=new Array(n+1);let p=0,r=0,c=0,i=0;
-  const nl=()=>{r++;c=0;if(r>=g.rows){p++;r=0}};
+  const n=text.length,pos=new Array(n+1),NE=new Int32Array(n+1).fill(-1);for(const [a,b] of findNotes(text))NE[a]=b;let p=0,r=0,c=0,i=0,rowStart=0,num=0;
+  const zl=[],pn=[],calls=[];   // per sheet: footnote lines in use, notes placed; call numbers in the body
+  const rowsOn=pp=>{const z=zl[pp];return z?Math.max(1,Math.floor((g.h-2*MARGIN-(1+z)*FS-FS*1.5)/g.pitch)+1):g.rows};
+  const nl=k=>{r++;c=0;if(r>=rowsOn(p)){p++;r=0}rowStart=k};
+  const wrap=(a,b,lab)=>{const out=[];let ln=0,cc=lab.length+1,k=a;
+    while(k<b){const ch=text[k];
+      if(isM(ch)){out.push([k,ln,cc]);k++;continue}
+      if(ch===' '||ch==='\t'){out.push([k,ln,Math.min(cc,g.cols)]);if(cc<g.cols)cc++;k++;continue}
+      let j=k,len=0;while(j<b&&text[j]!==' '&&text[j]!=='\t'){if(!isM(text[j]))len++;j++}
+      if(cc>0&&cc+len>g.cols&&len<=g.cols){ln++;cc=0}
+      for(;k<j;k++){if(isM(text[k])){out.push([k,ln,cc]);continue}if(cc>=g.cols){ln++;cc=0}out.push([k,ln,cc]);cc++}}
+    out.push([b,ln,cc]);return{out,lines:ln+1}};
   while(i<n){
     const ch=text[i];
     if(isM(ch)){pos[i]={p,r,c};i++;continue}
-    if(ch==='\n'){pos[i]={p,r,c};nl();i++;continue}
-    if(ch==='\f'){pos[i]={p,r,c};p++;r=0;c=0;i++;continue}
+    if(ch==='\n'){pos[i]={p,r,c};nl(i+1);i++;continue}
+    if(ch==='\f'){pos[i]={p,r,c};p++;r=0;c=0;rowStart=i+1;i++;continue}
     if(ch===' '||ch==='\t'||ch==='\r'){if(c>=g.cols)pos[i]={p,r,c:g.cols};else{pos[i]={p,r,c};c++}i++;continue}
-    let j=i,len=0;while(j<n&&!' \n\f\t\r'.includes(text[j])){if(!isM(text[j]))len++;j++}
-    if(c>0&&c+len>g.cols&&len<=g.cols)nl();
-    for(let k=i;k<j;k++){if(isM(text[k])){pos[k]={p,r,c};continue}if(c>=g.cols)nl();pos[k]={p,r,c};c++}
-    i=j;
+    let j=i,len=0;while(j<n&&!' \n\f\t\r'.includes(text[j])){const e=NE[j];if(e>=0){len+=String(num+1).length;j=e+1;continue}if(!isM(text[j]))len++;j++}
+    if(c>0&&c+len>g.cols&&len<=g.cols)nl(i);
+    let back=false;
+    for(let k=i;k<j;k++){
+      const e=NE[k];
+      if(e>=0){const lab=String(num+1);if(c+lab.length>g.cols)nl(k);
+        const w=wrap(k+2,e,lab),had=zl[p]||0;zl[p]=had+w.lines;
+        if(r>0&&r>=rowsOn(p)){
+          /* no room for this note on the sheet: the whole line goes on to the next one, note and all */
+          zl[p]=had;const list=pn[p]||[];
+          while(list.length&&list[list.length-1].r===r){const x=list.pop();zl[p]-=x.lines;num--;calls.length=x.ci}
+          p++;r=0;c=0;i=rowStart;back=true;break}
+        num++;(pn[p]||(pn[p]=[])).push({lab,r,lines:w.lines,out:w.out,ci:calls.length,k,e});
+        pos[k]={p,r,c};pos[k+1]={p,r,c:c+lab.length};
+        for(let d=0;d<lab.length;d++)calls.push({p,r,c:c+d,ch:lab[d]});
+        c+=lab.length;k=e;continue}
+      if(isM(text[k])){pos[k]={p,r,c};continue}
+      if(c>=g.cols)nl(k);pos[k]={p,r,c};c++}
+    if(!back)i=j;
   }
   pos[n]={p,r,c};
+  const zoneTop=[],hide=new Uint8Array(n+1);
+  pn.forEach((list,pp)=>{if(!list||!list.length)return;zoneTop[pp]=g.h-MARGIN-(1+zl[pp])*FS;let ln=1;
+    for(const x of list){x.ln=ln;hide[x.k]=hide[x.k+1]=hide[x.e]=1;for(const [k,l,cc] of x.out)pos[k]={p:pp,r:ZONE+ln+l,c:cc};ln+=x.lines}});
   const lines=new Map(),items=[];
   for(let k=0;k<=n;k++){const q=pos[k],key=q.p*100000+q.r,rg=lines.get(key);if(rg)rg[1]=k;else lines.set(key,[k,k]);
-    if(k<n){const ch=text[k];if(isM(ch)||'\n\f\t\r'.includes(ch))continue;
+    if(k<n){const ch=text[k];if(isM(ch)||'\n\f\t\r'.includes(ch)||hide[k])continue;
       const f=isM(text[k+1])?text.charCodeAt(k+1)-0xE000:0;
       if(ch===' '&&(!(f&2)||q.c>=g.cols))continue;
       (items[q.p]||(items[q.p]=[])).push({ch,code:ch.codePointAt(0),r:q.r,c:q.c,f})}}
-  return{pos,lines,items,pages:p+1};
+  for(const x of calls)(items[x.p]||(items[x.p]=[])).push({ch:x.ch,code:x.ch.codePointAt(0),r:x.r,c:x.c,f:0,sup:1});
+  pn.forEach((list,pp)=>{if(!list||!list.length)return;const it=items[pp]||(items[pp]=[]);
+    for(let cc=0;cc<20;cc++)it.push({ch:'_',code:95,r:ZONE,c:cc,f:0});
+    for(const x of list)for(let d=0;d<x.lab.length;d++)it.push({ch:x.lab[d],code:x.lab.charCodeAt(d),r:ZONE+x.ln,c:d,f:0,sup:1})});
+  return{pos,lines,items,pages:p+1,zoneTop};
 }
 
 /* ---------- texture ---------- */
@@ -792,7 +833,8 @@ function eachStrike(p,items,t,emit){
   };
   for(const it of items||[]){
     const h=hash(p+1,it.r,it.c,it.code);
-    const x=MARGIN+it.c*CW+CW/2,y=MARGIN+it.r*G.pitch+12.5;
+    const x=MARGIN+it.c*CW+CW/2,y=(it.r>=ZONE?L.zoneTop[p]+(it.r-ZONE)*FS-(it.r===ZONE?8:0):MARGIN+it.r*G.pitch)+12.5;
+    if(it.sup){one(it.ch,it.code,h,x,y-5,0,0,'sup');continue}
     if(it.ch!==' '){const fk=(it.f&4)?'italic':'main';
       one(it.ch,it.code,h,x,y,0,0,fk);
       if(it.f&1){const hb=hash(h,66,6,1);one(it.ch,it.code,hb,x,y,.55+((hb>>>4)&255)/255*.3,((hb>>>12)&255)/255*.3-.15,fk)}}
@@ -810,9 +852,9 @@ function drawPage(canvas,p,items,scale,mode){mode=mode||'full';
   const lay=document.createElement('canvas');lay.width=canvas.width;lay.height=canvas.height;
   const lc=lay.getContext('2d');lc.setTransform(scale,0,0,scale,0,0);
   lc.font=FS+'px '+FONTS[S.font];lc.fillStyle=inkC();lc.textAlign='center';lc.textBaseline='alphabetic';
-  const normal=FS+'px '+FONTS[S.font];let cur='';
+  const normal=FS+'px '+FONTS[S.font],sup=Math.round(FS*.72)+'px '+FONTS[S.font];let cur='';
   eachStrike(p,items,t,(ch,fk,x,y,rot,a)=>{
-    const fnt=fk==='italic'?ITALIC:normal;if(fnt!==cur){lc.font=fnt;cur=fnt}
+    const fnt=fk==='italic'?ITALIC:fk==='sup'?sup:normal;if(fnt!==cur){lc.font=fnt;cur=fnt}
     lc.save();lc.translate(x,y);lc.rotate(rot);lc.globalAlpha=a;lc.fillText(ch,0,0);
     if(t>0){lc.globalAlpha=a*.22*t;lc.fillText(ch,.35,.25)}
     lc.restore();
@@ -837,7 +879,7 @@ function render(){
   const key=[S.font,S.ink,S.spacing,S.paper,S.wear,S.pc,S.coffee,S.cmode,S.aged,S.cseed,S.dseed,JSON.stringify([S.hdr,S.ftr]),L.pages,fontsReady,(sc*dpr).toFixed(3)].join();
   sheets.forEach((s,p)=>{
     s.el.style.width=G.w*sc+'px';s.el.style.height=G.h*sc+'px';s.cv.style.width=G.w*sc+'px';s.cv.style.height=G.h*sc+'px';
-    const items=L.items[p]||[];let sig=key+'#';for(const it of items)sig+=it.ch+it.r+'.'+it.c+'.'+it.f+'|';
+    const items=L.items[p]||[];let sig=key+'#'+(L.zoneTop[p]||0)+'#';for(const it of items)sig+=it.ch+it.r+'.'+it.c+'.'+it.f+(it.sup?'s':'')+'|';
     if(s.sig!==sig){drawPage(s.cv,p,items,sc*dpr);s.sig=sig}
   });
   $('st-pages').textContent=L.pages;$('st-cols').textContent=G.cols;$('st-chars').textContent=strip(ta.value).replace(/[\n\f]/g,'').length.toLocaleString('en-US');
@@ -908,7 +950,7 @@ $('fs').onclick=async()=>{
 function syncFs(){const on=!!fsEl();const b=$('fs');b.textContent=on?'Exit full screen':'Full screen';b.classList.toggle('on',on)}
 document.addEventListener('fullscreenchange',syncFs);document.addEventListener('webkitfullscreenchange',syncFs);
 
-function cellXY(q){const s=sheets[q.p]||sheets[sheets.length-1];return{x:s.el.offsetLeft+(MARGIN+q.c*CW)*sc,y:s.el.offsetTop+(MARGIN+q.r*G.pitch)*sc}}
+function cellXY(q){const s=sheets[q.p]||sheets[sheets.length-1];return{x:s.el.offsetLeft+(MARGIN+q.c*CW)*sc,y:s.el.offsetTop+(q.r>=ZONE?L.zoneTop[q.p]+(q.r-ZONE)*FS:MARGIN+q.r*G.pitch)*sc}}
 function focusIdx(){return ta.selectionDirection==='backward'?ta.selectionStart:ta.selectionEnd}
 function updateCaret(){
   if(!L)return;
@@ -923,7 +965,7 @@ function updateCaret(){
   ov.querySelectorAll('.sel').forEach(n=>n.remove());
   if(e>s){const rows=new Map();for(let i=s;i<e;i++){if(isM(ta.value[i]))continue;const p=L.pos[i],k=p.p*100000+p.r,w=' \n\f'.includes(ta.value[i])&&ta.value[i]!==' '?.5:1;const g=rows.get(k);if(g){g.c0=Math.min(g.c0,p.c);g.c1=Math.max(g.c1,p.c+w)}else rows.set(k,{p:p.p,r:p.r,c0:p.c,c1:p.c+w})}
     for(const g of rows.values()){const a=cellXY({p:g.p,r:g.r,c:g.c0});const d=document.createElement('div');d.className='sel';d.style.left=a.x+'px';d.style.top=(a.y-1*sc)+'px';d.style.width=(g.c1-g.c0)*CW*sc+'px';d.style.height=FS*sc+'px';ov.appendChild(d)}}
-  $('st-page').textContent=q.p+1;$('st-line').textContent=q.r+1;$('st-col').textContent=q.c;
+  $('st-page').textContent=q.p+1;$('st-line').textContent=q.r>=ZONE?'note':q.r+1;$('st-col').textContent=q.c;
   $('marker').style.left=(q.c*CW*sc)+'px';
 }
 let scaleSig='';
@@ -959,11 +1001,13 @@ function hitIndex(p,r,col){
   let rg=L.lines.get(p*100000+r);
   if(!rg){for(let rr=r-1;rr>=0;rr--){const x=L.lines.get(p*100000+rr);if(x)return x[1]}
     for(let rr=r+1;rr<G.rows;rr++){const x=L.lines.get(p*100000+rr);if(x)return x[0]}return ta.value.length}
-  let best=rg[0],bd=1e9;for(let i=rg[0];i<=rg[1];i++){const d=Math.abs(L.pos[i].c-col);if(d<bd){bd=d;best=i}}return norm(best);
+  let best=rg[0],bd=1e9;for(let i=rg[0];i<=rg[1];i++){const q=L.pos[i];if(q.p!==p||q.r!==r)continue;const d=Math.abs(q.c-col);if(d<bd){bd=d;best=i}}return norm(best);
 }
 function indexFromPoint(sheetEl,cx,cy){
   const rect=sheetEl.getBoundingClientRect(),p=+sheetEl.dataset.p;
-  const ux=(cx-rect.left)/sc,uy=(cy-rect.top)/sc;
+  const ux=(cx-rect.left)/sc,uy=(cy-rect.top)/sc,zt=L.zoneTop[p];
+  if(zt!=null&&uy>=zt+FS-2){let row=ZONE+Math.max(1,Math.floor((uy-zt+2)/FS));while(row>ZONE&&!L.lines.has(p*100000+row))row--;
+    if(row>ZONE)return hitIndex(p,row,Math.max(0,Math.min(G.cols,Math.round((ux-MARGIN)/CW))))}
   const r=Math.max(0,Math.min(G.rows-1,Math.floor((uy-MARGIN+2)/G.pitch)));
   const col=Math.max(0,Math.min(G.cols,Math.round((ux-MARGIN)/CW)));
   return hitIndex(p,r,col);
@@ -972,6 +1016,7 @@ function setSel(a,f){a=norm(a);f=norm(f);if(f>=a)ta.setSelectionRange(a,f,'forwa
 function curAnchor(){return ta.selectionDirection==='backward'?ta.selectionEnd:ta.selectionStart}
 function vmove(dir,ext){
   const f=focusIdx(),q=L.pos[f];if(desiredCol==null)desiredCol=q.c;
+  if(q.r>=ZONE){const rr=q.r+dir,t=rr>ZONE&&L.lines.has(q.p*100000+rr)?hitIndex(q.p,rr,desiredCol):f;setSel(ext?curAnchor():t,t);scrollCaret();return}
   let p=q.p,r=q.r+dir,t;if(r<0){p--;r=G.rows-1}else if(r>=G.rows){p++;r=0}
   if(p<0)t=0;else if(p>=L.pages)t=ta.value.length;else t=hitIndex(p,r,desiredCol);
   if(t===f&&dir<0&&p>=0&&r>0){}
@@ -1011,7 +1056,11 @@ let inserting=false;
 function insert(str){ta.focus({preventScroll:true});inserting=true;let ok=false;try{ok=document.execCommand('insertText',false,str)}finally{inserting=false}
   if(!ok){ta.setRangeText(str,ta.selectionStart,ta.selectionEnd,'end');onInput({inputType:'insertText'})}}
 function del(a,b){ta.setSelectionRange(a,b);if(!document.execCommand('delete')){ta.setRangeText('',a,b,'end');onInput({})}}
+function insertNote(){ta.focus({preventScroll:true});const at=ta.selectionEnd;ta.setSelectionRange(at,at);insert('^[]');setSel(at+2,at+2);scrollCaret()}
 ta.addEventListener('beforeinput',e=>{
+  /* ^[ closes itself, so a note being typed never swallows the rest of the text */
+  if(!inserting&&e.inputType==='insertText'&&e.data==='['&&ta.selectionStart===ta.selectionEnd&&ta.value[ta.selectionStart-1]==='^'){
+    e.preventDefault();const s0=ta.selectionStart;insert('[]');setSel(s0+1,s0+1);return}
   if(inserting||!typeStyle||e.inputType!=='insertText'||!e.data)return;
   e.preventDefault();let out='';for(const ch of e.data)out+=ch==='\n'?ch:ch+MK(typeStyle);insert(out);
 });
@@ -1033,6 +1082,7 @@ ta.addEventListener('keydown',e=>{
   if((k==='Home'||k==='End')&&!e.ctrlKey&&!e.metaKey){e.preventDefault();homeEnd(k==='End',e.shiftKey);return}
   if(k==='Tab'&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();const c=L.pos[ta.selectionStart].c;insert(' '.repeat(5-(c%5)));sClick();return}
   if(k==='Enter'&&(e.ctrlKey||e.metaKey)&&!e.altKey){e.preventDefault();insert('\f');sReturn();return}
+  if((e.ctrlKey||e.metaKey)&&e.altKey&&(k.toLowerCase()==='n'||e.code==='KeyN')){e.preventDefault();insertNote();return}
   if((e.ctrlKey||e.metaKey)&&!e.altKey){const kk=k.toLowerCase();if(kk==='b'||kk==='i'||kk==='u'){e.preventDefault();toggleStyle(kk==='b'?1:kk==='u'?2:4)}return}
   if(e.ctrlKey||e.metaKey)return;
   if((k==='ArrowLeft'||k==='ArrowRight')&&!e.altKey){e.preventDefault();const s=ta.selectionStart,en=ta.selectionEnd,left=k==='ArrowLeft';
@@ -1099,6 +1149,7 @@ $('sound').onclick=()=>{S.sound=!S.sound;if(S.sound)actx();syncControls();save()
 function setBar(open){S.bar=open;syncControls();render();save();if(open)$('hidebar').focus({preventScroll:true});else ta.focus({preventScroll:true})}
 $('hidebar').onclick=()=>setBar(false);$('showbar').onclick=()=>setBar(true);
 $('center').onclick=()=>{S.center=!S.center;syncControls();render();save();scrollCaret();ta.focus({preventScroll:true})};
+$('fnote').addEventListener('pointerdown',e=>e.preventDefault());$('fnote').onclick=insertNote;
 $('undo').onclick=()=>{ta.focus({preventScroll:true});document.execCommand('undo')};
 $('redo').onclick=()=>{ta.focus({preventScroll:true});document.execCommand('redo')};
 let newT=null;
@@ -1108,7 +1159,7 @@ $('newdoc').onclick=()=>{const b=$('newdoc');
   openedName='';ta.focus({preventScroll:true});ta.select();if(!document.execCommand('delete')){ta.value='';onInput()}
   desk.scrollTop=0;toast('New document. Undo brings the old text back.');
 };
-$('copy').onclick=()=>{const txt=strip(ta.value).replace(/\f/g,'\n\n');
+$('copy').onclick=()=>{const txt=plainNotes(ta.value).replace(/\f/g,'\n\n');
   const ok=()=>toast('Text copied');
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(ok,()=>{ta.focus();ta.select();toast('Press Ctrl+C to copy the selected text')});
   else{ta.focus();ta.select();toast('Press Ctrl+C to copy the selected text')}};
@@ -1205,7 +1256,7 @@ async function savePdf(filename){
       else{pdf.setFillColor(PAPERC[S.pc]||PAPERC.white);pdf.rect(0,0,pw,ph,'F')}
       pdf.setTextColor(inkC());pdf.setFontSize(FS*k);let curF='';
       eachStrike(p,items,t,(ch,fk,x,y,rot,a)=>{
-        if(fk!==curF){pdf.setFont('pica-'+fk,'normal');curF=fk}
+        if(fk!==curF){pdf.setFont('pica-'+(fk==='sup'?'main':fk),'normal');pdf.setFontSize(FS*k*(fk==='sup'?.72:1));curF=fk}
         const w=pdf.getTextWidth(ch),deg=-rot*180/Math.PI,c=Math.cos(rot),s=Math.sin(rot);
         pdf.setGState(gs(a));pdf.text(ch,x*k-c*w/2,y*k-s*w/2,{angle:deg});
       });
@@ -1215,6 +1266,18 @@ async function savePdf(filename){
   }catch(e){toast('The PDF could not be made')}
 }
 
+function plainNotes(raw){const s=strip(raw),nm=findNotes(s);if(!nm.size)return s;
+  let out='',last=0,k=0;const list=[];
+  for(const [a,b] of nm){out+=s.slice(last,a)+'['+(++k)+']';list.push('['+k+'] '+s.slice(a+2,b));last=b+1}
+  return out+s.slice(last)+'\n\n'+'_'.repeat(20)+'\n'+list.join('\n')}
+function noteChars(t,a,b){const out=[];for(let q=a;q<b;){const ch=t[q];if(isM(ch)){q++;continue}
+  const f=isM(t[q+1])?t.charCodeAt(q+1)-0xE000:0;let j=q+1;while(isM(t[j]))j++;out.push({ch,f});q=j}return out}
+const FN_STYLES='<w:style w:type="character" w:styleId="FootnoteReference"><w:name w:val="footnote reference"/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>'+
+  '<w:style w:type="paragraph" w:styleId="FootnoteText"><w:name w:val="footnote text"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>';
+const footnotesXML=(fns,HEAD,NS)=>HEAD+'<w:footnotes '+NS+'>'+
+  '<w:footnote w:type="separator" w:id="-1"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:separator/></w:r></w:p></w:footnote>'+
+  '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>'+
+  fns.map((r,i)=>'<w:footnote w:id="'+(i+1)+'"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> </w:t></w:r>'+r+'</w:p></w:footnote>').join('')+'</w:footnotes>';
 /* ---------- Word ---------- */
 /* An ordinary, editable .docx for further work: text, bold/italic/underline, page breaks, header and footer,
    paper size, margins and spacing. No ribbon wear, aged paper or coffee. The typewriter fonts travel inside the file. */
@@ -1249,10 +1312,13 @@ async function buildDocx(){
       if(rf&4&&!clean)pr+='<w:rFonts w:ascii="Courier Prime" w:hAnsi="Courier Prime" w:cs="Courier Prime"/>';
       if(rf&1)pr+='<w:b/>';if(rf&4)pr+='<w:i/>';if(rf&2)pr+='<w:u w:val="single"/>';
       out+='<w:r>'+(pr?'<w:rPr>'+pr+'</w:rPr>':'')+buf.split('\t').map(x=>x?'<w:t xml:space="preserve">'+xesc(x)+'</w:t>':'').join('<w:tab/>')+'</w:r>';buf=''};
-    for(const c of chars){if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+    for(const c of chars){if(c.note){flush();rf=-1;out+=fnRef(c.note);continue}if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+  const fns=[],fnRef=nc=>{fns.push(runs(nc));return'<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="'+fns.length+'"/></w:r>'};
   /* one paragraph per typed line, as on the sheet; a new page starts the next paragraph on a fresh page */
   const paras=[];let cur=[],brk=false;
+  const NOTES=findNotes(t);
   for(let i=0;i<t.length;){const ch=t[i];if(isM(ch)){i++;continue}
+    {const ne=NOTES.get(i);if(ne!==undefined){const nc=noteChars(t,i+2,ne);if(nc.some(x=>x.f&4))usedItalic=true;cur.push({ch:'￼',f:0,note:nc});i=ne+1;continue}}
     const f=isM(t[i+1])?t.charCodeAt(i+1)-0xE000:0;let j=i+1;while(isM(t[j]))j++;
     if(ch==='\n'||ch==='\f'){paras.push({cur,brk});cur=[];brk=ch==='\f'}
     else if(ch!=='\r'){cur.push({ch,f});if(f&4)usedItalic=true}
@@ -1272,7 +1338,7 @@ async function buildDocx(){
   const styles=HEAD+'<w:styles '+NS+'><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="'+base+'" w:hAnsi="'+base+'" w:cs="'+base+'" w:eastAsia="'+base+'"/>'+
     '<w:color w:val="'+INKS[S.ink].slice(1).toUpperCase()+'"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:lang w:val="'+lang+'"/></w:rPr></w:rPrDefault>'+
     '<w:pPrDefault><w:pPr><w:spacing w:after="0" w:line="'+Math.round(240*S.spacing)+'" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'+
-    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'+FN_STYLES+'</w:styles>';
   /* fonts: the regular face of the chosen type, plus Courier Prime Italic when italics are used */
   const guid=()=>'{'+(crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g,()=>(Math.random()*16|0).toString(16))).toUpperCase()+'}';
   const fonts=[],frels=[],ffiles=[];let n=0;
@@ -1289,20 +1355,21 @@ async function buildDocx(){
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'+
       '<Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont"/>'+
       '<Override PartName="/word/document.xml" ContentType="'+CT+'document.main+xml"/><Override PartName="/word/styles.xml" ContentType="'+CT+'styles+xml"/>'+
-      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/><Override PartName="/word/fontTable.xml" ContentType="'+CT+'fontTable+xml"/>'+
+      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/>'+(fns.length?'<Override PartName="/word/footnotes.xml" ContentType="'+CT+'footnotes+xml"/>':'')+'<Override PartName="/word/fontTable.xml" ContentType="'+CT+'fontTable+xml"/>'+
       (hdr?'<Override PartName="/word/header1.xml" ContentType="'+CT+'header+xml"/>':'')+(ftr?'<Override PartName="/word/footer1.xml" ContentType="'+CT+'footer+xml"/>':'')+'</Types>'},
     {name:'_rels/.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+REL+'officeDocument" Target="word/document.xml"/></Relationships>'},
     {name:'word/document.xml',data:doc},
     {name:'word/_rels/document.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
-      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/><Relationship Id="rIdN" Type="'+REL+'fontTable" Target="fontTable.xml"/>'+
+      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/>'+(fns.length?'<Relationship Id="rIdFn" Type="'+REL+'footnotes" Target="footnotes.xml"/>':'')+'<Relationship Id="rIdN" Type="'+REL+'fontTable" Target="fontTable.xml"/>'+
       (hdr?'<Relationship Id="rIdH" Type="'+REL+'header" Target="header1.xml"/>':'')+(ftr?'<Relationship Id="rIdF" Type="'+REL+'footer" Target="footer1.xml"/>':'')+'</Relationships>'},
     {name:'word/styles.xml',data:styles},
-    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'>'+(ffiles.length?'<w:embedTrueTypeFonts/>':'')+'<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
+    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'>'+(ffiles.length?'<w:embedTrueTypeFonts/>':'')+(fns.length?'<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>':'')+'<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
     {name:'word/fontTable.xml',data:HEAD+'<w:fonts '+NS+'>'+fonts.join('')+'</w:fonts>'},
     {name:'word/_rels/fontTable.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+frels.join('')+'</Relationships>'},
     ...ffiles];
   if(hdr)files.push({name:'word/header1.xml',data:hdr});
   if(ftr)files.push({name:'word/footer1.xml',data:ftr});
+  if(fns.length)files.push({name:'word/footnotes.xml',data:footnotesXML(fns,HEAD,NS)});
   return zipStore(files,CT+'document');
 }
 
@@ -1344,10 +1411,13 @@ async function buildDocxFormatted(){
       if(rf&1)pr+='<w:b/>';if(rf&4)pr+='<w:i/>';if(rf&32)pr+='<w:caps/>';if(rf&8)pr+='<w:smallCaps/>';
       if(rf&16)pr+='<w:highlight w:val="yellow"/>';if(rf&2)pr+='<w:u w:val="single"/>';
       out+='<w:r>'+(pr?'<w:rPr>'+pr+'</w:rPr>':'')+buf.split('\t').map(x=>x?'<w:t xml:space="preserve">'+xesc(x)+'</w:t>':'').join('<w:tab/>')+'</w:r>';buf=''};
-    for(const c of chars){if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+    for(const c of chars){if(c.note){flush();rf=-1;out+=fnRef(c.note);continue}if(c.f!==rf){flush();rf=c.f}buf+=c.ch}flush();return out};
+  const fns=[],fnRef=nc=>{fns.push(runs(nc));return'<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="'+fns.length+'"/></w:r>'};
   /* lines as typed */
   const t=ta.value,lines=[];let cur=[],brk=false;
+  const NOTES=findNotes(t);
   for(let i=0;i<t.length;){const ch=t[i];if(isM(ch)){i++;continue}
+    {const ne=NOTES.get(i);if(ne!==undefined){cur.push({ch:'￼',f:0,note:noteChars(t,i+2,ne)});i=ne+1;continue}}
     const f=isM(t[i+1])?t.charCodeAt(i+1)-0xE000:0;let j=i+1;while(isM(t[j]))j++;
     if(ch==='\n'||ch==='\f'){lines.push({chars:cur,brk});cur=[];brk=ch==='\f'}
     else if(ch!=='\r')cur.push({ch,f});
@@ -1373,16 +1443,16 @@ async function buildDocxFormatted(){
       P.numId=lv<4?1:1+series;P.ilvl=lv<4?lv:lv-4;
       lastLvl=lv;
       const plain=s.trim();
-      if(lv===0&&plain.length<=90&&!/[.:;,]$/.test(plain)){P.title=true;P.keep=true;chars=chars.map(c=>({ch:c.ch,f:c.f|1|32}))}
+      if(lv===0&&plain.length<=90&&!/[.:;,]$/.test(plain)){P.title=true;P.keep=true;chars=chars.map(c=>({...c,f:c.f|1|32}))}
       else if(lv<4&&plain.length<=90&&!/[.:;,]$/.test(plain))P.keep=true;
     }else{
       const len=s.replace(/\s+$/,'').length;
-      if(/^[“"]/.test(s)&&prevBlank&&lead<8){P.quote=true;chars=chars.map(c=>({ch:c.ch,f:c.f|4}))}
+      if(/^[“"]/.test(s)&&prevBlank&&lead<8){P.quote=true;chars=chars.map(c=>({...c,f:c.f|4}))}
       else if(lead>=8){const mid=lead+len/2;
         if(Math.abs(mid-G.cols/2)<=6)P.jc='center';else if(lead+len>=G.cols-2)P.jc='right';else P.indent=lead*0.254}
     }
     /* [•] blanks and [XX: comments] in yellow; a described blank also bold small caps; (“Defined Term”) bold the first time */
-    const flag=(a,b,f)=>{for(let x=a;x<b&&x<chars.length;x++)chars[x]={ch:chars[x].ch,f:chars[x].f|f}};
+    const flag=(a,b,f)=>{for(let x=a;x<b&&x<chars.length;x++)chars[x]={...chars[x],f:chars[x].f|f}};
     s=chars.map(c=>c.ch).join('');let m;
     const br=/\[([^\[\]\n]{1,120})\]/g;
     while((m=br.exec(s))){const inner=m[1],a=m.index,b=a+m[0].length;
@@ -1431,25 +1501,26 @@ async function buildDocxFormatted(){
   const styles=HEAD+'<w:styles '+NS+'><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Georgia" w:hAnsi="Georgia" w:cs="Georgia" w:eastAsia="Georgia"/>'+
     '<w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="pt-BR"/></w:rPr></w:rPrDefault>'+
     '<w:pPrDefault><w:pPr><w:spacing w:before="0" w:after="0" w:line="288" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr></w:pPrDefault></w:docDefaults>'+
-    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style></w:styles>';
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'+FN_STYLES+'</w:styles>';
   const files=[
     {name:'[Content_Types].xml',data:HEAD+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'+
       '<Override PartName="/word/document.xml" ContentType="'+CT+'document.main+xml"/><Override PartName="/word/styles.xml" ContentType="'+CT+'styles+xml"/>'+
-      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/><Override PartName="/word/numbering.xml" ContentType="'+CT+'numbering+xml"/>'+
+      '<Override PartName="/word/settings.xml" ContentType="'+CT+'settings+xml"/>'+(fns.length?'<Override PartName="/word/footnotes.xml" ContentType="'+CT+'footnotes+xml"/>':'')+'<Override PartName="/word/numbering.xml" ContentType="'+CT+'numbering+xml"/>'+
       '<Override PartName="/word/footer1.xml" ContentType="'+CT+'footer+xml"/><Override PartName="/word/footer2.xml" ContentType="'+CT+'footer+xml"/>'+
       (hdr?'<Override PartName="/word/header1.xml" ContentType="'+CT+'header+xml"/><Override PartName="/word/header2.xml" ContentType="'+CT+'header+xml"/>':'')+'</Types>'},
     {name:'_rels/.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="'+REL+'officeDocument" Target="word/document.xml"/></Relationships>'},
     {name:'word/document.xml',data:doc},
     {name:'word/_rels/document.xml.rels',data:HEAD+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
-      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/><Relationship Id="rIdN" Type="'+REL+'numbering" Target="numbering.xml"/>'+
+      '<Relationship Id="rIdS" Type="'+REL+'styles" Target="styles.xml"/><Relationship Id="rIdT" Type="'+REL+'settings" Target="settings.xml"/>'+(fns.length?'<Relationship Id="rIdFn" Type="'+REL+'footnotes" Target="footnotes.xml"/>':'')+'<Relationship Id="rIdN" Type="'+REL+'numbering" Target="numbering.xml"/>'+
       '<Relationship Id="rIdF" Type="'+REL+'footer" Target="footer1.xml"/><Relationship Id="rIdF1" Type="'+REL+'footer" Target="footer2.xml"/>'+
       (hdr?'<Relationship Id="rIdH" Type="'+REL+'header" Target="header1.xml"/><Relationship Id="rIdH1" Type="'+REL+'header" Target="header2.xml"/>':'')+'</Relationships>'},
     {name:'word/styles.xml',data:styles},
-    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'><w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
+    {name:'word/settings.xml',data:HEAD+'<w:settings '+NS+'>'+(fns.length?'<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>':'')+'<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>'},
     {name:'word/numbering.xml',data:numbering},
     {name:'word/footer1.xml',data:ftrPage},{name:'word/footer2.xml',data:ftrFirst}];
   if(hdr)files.push({name:'word/header1.xml',data:hdr},{name:'word/header2.xml',data:hdr});
+  if(fns.length)files.push({name:'word/footnotes.xml',data:footnotesXML(fns,HEAD,NS)});
   return zipStore(files,CT+'document');
 }
 
@@ -1459,7 +1530,7 @@ const EXPORTS={
   docx:async n=>{try{await offer(n,await buildDocx())}catch(e){toast('The Word file could not be made')}},
   docxf:async n=>{try{await offer(n,await buildDocxFormatted())}catch(e){toast('The Word file could not be made')}},
   md:n=>offer(n,toMD(ta.value)),
-  txt:n=>offer(n,strip(ta.value))};
+  txt:n=>offer(n,plainNotes(ta.value))};
 let saveKind='pdf';const EXT=k=>k==='docxf'?'docx':k;
 function askName(kind){
   saveKind=kind;const d=$('namedlg'),f=$('fname');

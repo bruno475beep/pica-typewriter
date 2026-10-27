@@ -8,6 +8,8 @@ Fitas *Worn ribbon*, *Very worn ribbon* e *Clean*, e duas opções que se combin
 
 Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas em cada um, repetidas em todas as folhas; `{page}` e `{pages}` viram a numeração.
 
+**Notas de rodapé**: digite `^[` (o colchete fecha sozinho), use Ctrl+Alt+N ou o botão *Footnote* e escreva a nota; a seta → volta ao texto. A nota é datilografada no pé da mesma folha, sob um traço; no Word vira nota de rodapé de verdade, no Markdown fica `^[nota]` e no texto simples vai para o fim.
+
 **Save ▾**: um só botão para salvar em PDF, Word (.docx), Markdown ou texto; antes de salvar, uma caixa pede o nome do arquivo. **New document** começa uma folha em branco (o Undo traz o texto de volta) e **Ctrl+Enter** abre uma folha nova.
 
 **Word, formatted (.docx)**: padrão de documentos jurídicos — Georgia 11, justificado, entrelinhas 1,2, A4 com margens de 2,5/3 cm, número de página a partir da 2ª. Números digitados no começo da linha (`1.`, `1.1`, `1.1.1`, `1.1.1.1`, `(a)`, `(1)`, `(i)`, `(A)`) viram numeração automática do Word; títulos de 1º nível saem em negrito e caixa alta; citações em parágrafo próprio, recuadas e em itálico; `[•]` e `[comentários]` em amarelo; termos definidos, como (“Fundo”), em negrito.
@@ -16,6 +18,6 @@ Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas e
 
 Tudo roda num único arquivo `index.html`, sem servidor e sem instalação — pode baixá-lo e abrir offline. O texto fica guardado só no seu navegador.
 
-Atalhos: Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado · Ctrl+Enter nova folha · Ctrl+Z desfazer.
+Atalhos: Ctrl+B negrito · Ctrl+I itálico · Ctrl+U sublinhado · Ctrl+Alt+N nota de rodapé · Ctrl+Enter nova folha · Ctrl+Z desfazer.
 
 Versões anteriores: [v1](https://bruno475beep.github.io/pica-typewriter/v1/) (a primeira), [v2](https://bruno475beep.github.io/pica-typewriter/v2/) (com os efeitos, sem cabeçalho e rodapé) e [v3](https://bruno475beep.github.io/pica-typewriter/v3/) (com papel envelhecido mais forte).
