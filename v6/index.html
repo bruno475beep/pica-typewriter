@@ -77,7 +77,7 @@ input[type=range]{width:90px;accent-color:var(--accent)}
 .pop{position:absolute;top:calc(100% + 6px);left:-7px;background:var(--chrome);border:1px solid var(--line);border-radius:6px;padding:7px;box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:4}
 .ink.cur{box-shadow:0 0 0 1px var(--muted)}
 .ink.cur[aria-expanded="true"]{box-shadow:0 0 0 2px var(--accent)}
-.menu{left:auto;right:0;display:flex;flex-direction:column;min-width:180px;padding:4px}
+.menu{left:0;right:auto;display:flex;flex-direction:column;min-width:180px;padding:4px}
 .menu[hidden]{display:none}
 .menu button{border:0;background:transparent;text-align:left;height:34px;display:flex;justify-content:space-between;align-items:center;gap:18px;border-radius:4px;padding:0 10px}
 .menu button:hover,.menu button:focus-visible{background:var(--accent-soft);outline:none}
@@ -1069,7 +1069,10 @@ function syncControls(){
 const POPS=[['inkcur','inkpop'],['pccur','pcpop'],['save','savemenu']];
 function closePops(except){for(const [b,p] of POPS){if(p===except)continue;$(p).hidden=true;$(b).setAttribute('aria-expanded','false')}}
 POPS.forEach(([b,p])=>{$(b).addEventListener('click',()=>{const open=$(p).hidden;closePops(p);$(p).hidden=!open;$(b).setAttribute('aria-expanded',open);
-  if(open){const first=$(p).querySelector('.on,button');if(first)first.focus()}})});
+  if(open){const el=$(p);el.style.left=el.style.right='';const r=el.getBoundingClientRect();
+    /* keep the popover on screen: open towards whichever side has room */
+    if(r.right>innerWidth-8){el.style.left='auto';el.style.right='0'}
+    const first=el.querySelector('.on,button');if(first)first.focus()}})});
 document.addEventListener('pointerdown',e=>{if(!e.target.closest('.popwrap'))closePops()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&POPS.some(([,p])=>!$(p).hidden)){const open=POPS.find(([,p])=>!$(p).hidden);closePops();$(open[0]).focus()}});
 document.querySelectorAll('.pop .ink').forEach(b=>b.addEventListener('click',()=>{closePops();ta.focus({preventScroll:true})}));
@@ -1316,7 +1319,7 @@ function askName(kind){
 }
 $('fcancel').onclick=()=>$('namedlg').close('');
 $('namedlg').addEventListener('close',()=>{const d=$('namedlg');
-  if(d.returnValue==='ok'){const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').trim()||baseName();
+  if(d.returnValue==='ok'){const n=$('fname').value.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\.+$/,'').replace(/\s+/g,' ').trim()||baseName();
     if(n.length)openedName=n;EXPORTS[saveKind](n+'.'+saveKind)}
   d.returnValue='';ta.focus({preventScroll:true})});
 
