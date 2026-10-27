@@ -833,7 +833,7 @@ function eachStrike(p,items,t,emit){
   };
   for(const it of items||[]){
     const h=hash(p+1,it.r,it.c,it.code);
-    const x=MARGIN+it.c*CW+CW/2,y=(it.r>=ZONE?L.zoneTop[p]+(it.r-ZONE)*FS:MARGIN+it.r*G.pitch)+12.5;
+    const x=MARGIN+it.c*CW+CW/2,y=(it.r>=ZONE?L.zoneTop[p]+(it.r-ZONE)*FS-(it.r===ZONE?8:0):MARGIN+it.r*G.pitch)+12.5;
     if(it.sup){one(it.ch,it.code,h,x,y-5,0,0,'sup');continue}
     if(it.ch!==' '){const fk=(it.f&4)?'italic':'main';
       one(it.ch,it.code,h,x,y,0,0,fk);
