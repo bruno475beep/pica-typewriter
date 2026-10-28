@@ -1218,8 +1218,8 @@ const SHELF=5,DOCKEYS=['font','ink','spacing','paper','wear','pc','coffee','cmod
 const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const docSettings=()=>{const o={};for(const k of DOCKEYS)o[k]=S[k];return JSON.parse(JSON.stringify(o))};
 let dbp=null;
-function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('pica',1);
-  r.onupgradeneeded=()=>r.result.createObjectStore('docs',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>{dbp=null;rej(r.error)}}))}
+function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('pica',2);
+  r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('docs'))r.result.createObjectStore('docs',{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>{dbp=null;rej(r.error)}}))}
 async function idb(mode,fn){const d=await db();return new Promise((res,rej)=>{const tx=d.transaction('docs',mode),q=fn(tx.objectStore('docs'));
   tx.oncomplete=()=>res(q&&q.result);tx.onerror=()=>rej(tx.error)})}
 const docsAll=()=>idb('readonly',st=>st.getAll()).then(a=>a||[]);
