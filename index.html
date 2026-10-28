@@ -81,6 +81,16 @@ input[type=range]{width:90px;accent-color:var(--accent)}
 .menu[hidden]{display:none}
 .menu button{border:0;background:transparent;text-align:left;height:34px;display:flex;justify-content:space-between;align-items:center;gap:18px;border-radius:4px;padding:0 10px}
 .menu button:hover,.menu button:focus-visible{background:var(--accent-soft);outline:none}
+.docmenu{min-width:300px;max-width:min(380px,calc(100vw - 32px))}
+.docrow{display:flex;align-items:center;gap:2px;border-radius:4px}
+.docrow.cur{background:var(--accent-soft)}
+.menu .docrow .docopen{flex:1;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;height:auto;min-height:40px;padding:5px 10px;gap:1px}
+.docopen .nm{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.menu .docrow .docpin,.menu .docrow .docdel{width:32px;height:32px;padding:0;justify-content:center;color:var(--muted);flex:none;font-size:15px}
+.menu .docrow .docpin[aria-pressed="true"]{color:var(--accent)}
+.menu .docrow .docdel.warn{width:auto;padding:0 8px;color:var(--accent);font-size:12px}
+.docempty{padding:10px;color:var(--muted)}
+.docnote{font-size:11px;color:var(--muted);padding:7px 10px 4px;border-top:1px solid var(--line);margin-top:4px;line-height:1.4}
 .menu .ext{color:var(--muted);font-family:var(--f-data);font-size:11px}
 #namedlg{border:1px solid var(--line);border-radius:8px;background:var(--chrome);color:var(--fg);padding:18px 18px 16px;width:min(420px,calc(100vw - 32px));box-shadow:0 18px 50px rgba(0,0,0,.3)}
 #namedlg::backdrop{background:rgba(15,20,18,.42)}
@@ -184,12 +194,15 @@ input[type=range]{width:90px;accent-color:var(--accent)}
     <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
     <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
     <div class="spacer"></div>
-    <button id="newdoc" title="Start over on a blank sheet">New document</button>
-    <button id="open" title="Open a .txt or .md file">Open…</button>
-    <input type="file" id="file" accept=".txt,.md,.markdown,text/plain,text/markdown" hidden>
+    <button id="newdoc" title="Start a blank sheet; the current one stays in Documents">New document</button>
+    <div class="popwrap"><button id="docs" aria-haspopup="menu" aria-expanded="false" aria-controls="docmenu" title="Your recent documents, kept in this browser">Documents &#9662;</button>
+      <div class="pop menu docmenu" id="docmenu" role="menu" hidden></div></div>
+    <button id="open" title="Open a .pica, .txt or .md file">Open…</button>
+    <input type="file" id="file" accept=".pica,.txt,.md,.markdown,text/plain,text/markdown" hidden>
     <button id="copy">Copy text</button>
     <div class="popwrap"><button id="save" class="primary" disabled aria-haspopup="menu" aria-expanded="false" aria-controls="savemenu">Save &#9662;</button>
       <div class="pop menu" id="savemenu" role="menu" hidden>
+        <button role="menuitem" data-kind="pica" title="Everything, exactly as it is: text, styles, footnotes, header and footer, paper and ink. Open it again in Pica.">Pica document <span class="ext">.pica</span></button>
         <button role="menuitem" data-kind="pdf" title="The sheets as they look here">PDF <span class="ext">.pdf</span></button>
         <button role="menuitem" data-kind="docxf" title="Word in the house style for legal documents: Georgia 11, justified, 1.2 spacing, 2.5/3 cm margins, page numbers from page 2, and typed 1. 1.1 (a) (i) numbers turned into automatic numbering">Word, formatted <span class="ext">.docx</span></button>
         <button role="menuitem" data-kind="docx" title="Word document to keep working on: text, styles, header and footer, in the typewriter font. No ribbon wear, aged paper or coffee.">Word, unformatted <span class="ext">.docx</span></button>
@@ -674,7 +687,7 @@ function sampleText(){
 /* ---------- storage ---------- */
 /* v2 keeps its own store so the original page never sees settings it does not know; on first visit it borrows v1's text and settings. */
 function load(){try{const v=JSON.parse(localStorage.getItem(KEY)||localStorage.getItem(OLDKEY)||'null');if(v){Object.assign(S,v.s||{});if(v.v!==2)S.sound=true;return typeof v.t==='string'?v.t.replace(/[-]/g,''):null}}catch(e){}return null}
-let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify({v:2,t:ta.value,s:S}))}catch(e){}},350)}
+let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{try{localStorage.setItem(KEY,JSON.stringify({v:2,t:ta.value,s:S}))}catch(e){}},350);shelve()}
 
 /* ---------- geometry & layout ---------- */
 function geom(){const P=PAPERS[S.paper];const pitch=FS*S.spacing;return{w:P.w,h:P.h,pitch,cols:Math.floor((P.w-2*MARGIN)/CW),rows:Math.floor((P.h-2*MARGIN-FS)/pitch)+1}}
@@ -1117,7 +1130,7 @@ function syncControls(){
   const cb=$('center');cb.classList.toggle('on',S.center);cb.setAttribute('aria-pressed',S.center);
   const sb=$('sound');sb.textContent=S.sound?'Sound on':'Sound off';sb.classList.toggle('on',S.sound);sb.setAttribute('aria-pressed',S.sound);
 }
-const POPS=[['inkcur','inkpop'],['pccur','pcpop'],['save','savemenu']];
+const POPS=[['inkcur','inkpop'],['pccur','pcpop'],['save','savemenu'],['docs','docmenu']];
 function closePops(except){for(const [b,p] of POPS){if(p===except)continue;$(p).hidden=true;$(b).setAttribute('aria-expanded','false')}}
 POPS.forEach(([b,p])=>{$(b).addEventListener('click',()=>{const open=$(p).hidden;closePops(p);$(p).hidden=!open;$(b).setAttribute('aria-expanded',open);
   if(open){const el=$(p);el.style.left=el.style.right='';const r=el.getBoundingClientRect();
@@ -1152,13 +1165,8 @@ $('center').onclick=()=>{S.center=!S.center;syncControls();render();save();scrol
 $('fnote').addEventListener('pointerdown',e=>e.preventDefault());$('fnote').onclick=insertNote;
 $('undo').onclick=()=>{ta.focus({preventScroll:true});document.execCommand('undo')};
 $('redo').onclick=()=>{ta.focus({preventScroll:true});document.execCommand('redo')};
-let newT=null;
-$('newdoc').onclick=()=>{const b=$('newdoc');
-  if(!newT){b.textContent='Start over?';b.classList.add('warn');newT=setTimeout(()=>{b.textContent='New document';b.classList.remove('warn');newT=null},3000);return}
-  clearTimeout(newT);newT=null;b.textContent='New document';b.classList.remove('warn');
-  openedName='';ta.focus({preventScroll:true});ta.select();if(!document.execCommand('delete')){ta.value='';onInput()}
-  desk.scrollTop=0;toast('New document. Undo brings the old text back.');
-};
+$('newdoc').onclick=async()=>{const had=!!strip(ta.value).trim();await shelve(true);showDoc('',null,'');
+  toast(had?'New document. The previous one is in Documents.':'New document')};
 $('copy').onclick=()=>{const txt=plainNotes(ta.value).replace(/\f/g,'\n\n');
   const ok=()=>toast('Text copied');
   if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(ok,()=>{ta.focus();ta.select();toast('Press Ctrl+C to copy the selected text')});
@@ -1203,15 +1211,69 @@ function fromMD(src){
   }
   return out;
 }
+/* ---------- documents ---------- */
+/* The shelf: recent documents kept whole in this browser (IndexedDB, which has room to spare, unlike localStorage).
+   The document being typed is shelved a moment after each change; the five most recent stay, and pinned ones always. */
+const SHELF=5,DOCKEYS=['font','ink','spacing','paper','wear','pc','coffee','cmode','aged','cseed','dseed','hdr','ftr'];
+const newId=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const docSettings=()=>{const o={};for(const k of DOCKEYS)o[k]=S[k];return JSON.parse(JSON.stringify(o))};
+let dbp=null;
+function db(){return dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('pica',2);
+  r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains('docs'))r.result.createObjectStore('docs',{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>{dbp=null;rej(r.error)}}))}
+async function idb(mode,fn){const d=await db();return new Promise((res,rej)=>{const tx=d.transaction('docs',mode),q=fn(tx.objectStore('docs'));
+  tx.oncomplete=()=>res(q&&q.result);tx.onerror=()=>rej(tx.error)})}
+const docsAll=()=>idb('readonly',st=>st.getAll()).then(a=>a||[]);
+let shelfT=0;
+function shelve(now){clearTimeout(shelfT);
+  const run=async()=>{try{
+    if(!strip(ta.value).trim()||ta.value===sampleText())return;   /* blank sheets and the untouched sample are not kept */
+    if(!S.docId)S.docId=newId();S.docName=openedName;
+    const all=await docsAll(),prev=all.find(d=>d.id===S.docId);
+    await idb('readwrite',st=>st.put({id:S.docId,name:openedName||baseName(),custom:!!openedName,t:ta.value,s:docSettings(),
+      pinned:!!(prev&&prev.pinned),created:prev?prev.created:Date.now(),updated:Date.now()}));
+    if(!prev){const loose=all.filter(d=>!d.pinned&&d.id!==S.docId).sort((a,b)=>b.updated-a.updated).slice(SHELF-1);
+      for(const d of loose){await idb('readwrite',st=>st.delete(d.id));toast('“'+d.name+'” left Documents, the oldest of '+SHELF+'. Pin a document to keep it.')}}
+  }catch(e){}};
+  if(now)return run();shelfT=setTimeout(run,1200)}
+/* put a document on the sheet: the shelf's, an opened file's, or a blank one */
+function showDoc(text,settings,name,id){
+  S.docId=id||newId();if(settings)Object.assign(S,JSON.parse(JSON.stringify(settings)));openedName=name||'';S.docName=openedName;
+  ta.value=text;desiredCol=null;pinned=-1;syncControls();render();const end=ta.value.length;ta.focus({preventScroll:true});setSel(end,end);
+  desk.scrollTop=0;scrollCaret();save()}
+async function openDoc(id){await shelve(true);const d=(await docsAll()).find(x=>x.id===id);if(!d){toast('That document is no longer here');return}
+  showDoc(d.t,d.s,d.custom?d.name:'',d.id);toast('Opened “'+d.name+'”')}
+async function listDocs(){const m=$('docmenu');
+  let all;try{all=await docsAll()}catch(e){m.innerHTML='<div class="docempty">Documents need browser storage, which is blocked here. Save a .pica file instead.</div>';return}
+  all.sort((a,b)=>(b.pinned-a.pinned)||(b.updated-a.updated));
+  const when=t=>{const d=new Date(t),today=new Date().toDateString()===d.toDateString();
+    return today?d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'})};
+  const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  m.innerHTML=(all.length?all.map(d=>'<div class="docrow'+(d.id===S.docId?' cur':'')+'" data-id="'+esc(d.id)+'">'+
+      '<button role="menuitem" class="docopen" title="'+esc(d.name)+'"><span class="nm">'+esc(d.name)+'</span><span class="ext">'+(d.id===S.docId?'on the sheet now · ':'')+when(d.updated)+'</span></button>'+
+      '<button class="docpin" aria-pressed="'+!!d.pinned+'" title="'+(d.pinned?'Pinned: always kept. Click to unpin':'Pin: keep it in Documents for good')+'" aria-label="Pin">'+(d.pinned?'★':'☆')+'</button>'+
+      (d.id===S.docId?'':'<button class="docdel" title="Delete from Documents" aria-label="Delete">✕</button>')+'</div>').join('')
+    :'<div class="docempty">Nothing here yet. What you type is kept here as you go.</div>')+
+    '<div class="docnote">The '+SHELF+' most recent are kept, and pinned ones always. They live only in this browser: for a copy of your own, Save ▾ Pica document (.pica).</div>';
+}
+$('docs').addEventListener('click',()=>{if(!$('docmenu').hidden)shelve(true).then(listDocs)});
+$('docmenu').addEventListener('click',async e=>{const row=e.target.closest('.docrow');if(!row)return;const id=row.dataset.id,b=e.target.closest('button');if(!b)return;
+  if(b.classList.contains('docopen')){closePops();if(id!==S.docId)openDoc(id);else ta.focus({preventScroll:true});return}
+  const d=(await docsAll()).find(x=>x.id===id);if(!d)return listDocs();
+  if(b.classList.contains('docpin')){d.pinned=!d.pinned;await idb('readwrite',st=>st.put(d));return listDocs()}
+  if(b.classList.contains('docdel')){if(!b.classList.contains('warn')){b.classList.add('warn');b.textContent='Delete?';setTimeout(()=>{if(b.isConnected){b.classList.remove('warn');b.textContent='✕'}},3000);return}
+    await idb('readwrite',st=>st.delete(id));toast('Deleted “'+d.name+'”');listDocs()}});
+/* the .pica file: the whole document, to keep or carry elsewhere */
+const picaFile=name=>new Blob([JSON.stringify({format:'pica',version:1,name,text:ta.value,settings:docSettings()})],{type:'application/json'});
 function loadFile(file){
   if(!file)return;const name=file.name||'document.txt';
-  if(!/\.(txt|md|markdown|text)$/i.test(name)&&!/^text\//.test(file.type||'')){toast('Pica opens .txt and .md files');return}
+  if(!/\.(pica|txt|md|markdown|text)$/i.test(name)&&!/^text\//.test(file.type||'')){toast('Pica opens .pica, .txt and .md files');return}
   const rd=new FileReader();
-  rd.onload=()=>{let txt=String(rd.result||'');const md=/\.(md|markdown)$/i.test(name);
-    txt=md?fromMD(txt):strip(txt.replace(/\r\n?/g,'\n'));
-    openedName=name.replace(/\.[^.]+$/,'');
-    ta.focus({preventScroll:true});ta.select();insert(txt);setSel(0,0);desk.scrollTop=0;
-    toast('Opened '+name+'. Undo brings back the previous text.')};
+  rd.onload=async()=>{let txt=String(rd.result||'');const base=name.replace(/\.[^.]+$/,'');
+    if(/\.pica$/i.test(name)){let d=null;try{d=JSON.parse(txt)}catch(e){}
+      if(!d||d.format!=='pica'||typeof d.text!=='string'){toast('That is not a Pica document');return}
+      await shelve(true);showDoc(d.text,d.settings||null,d.name||base);toast('Opened '+name);return}
+    txt=/\.(md|markdown)$/i.test(name)?fromMD(txt):strip(txt.replace(/\r\n?/g,'\n'));
+    await shelve(true);showDoc(txt,null,base);toast('Opened '+name+'. The previous document is in Documents.')};
   rd.onerror=()=>toast('That file could not be read');
   rd.readAsText(file);
 }
@@ -1530,7 +1592,8 @@ const EXPORTS={
   docx:async n=>{try{await offer(n,await buildDocx())}catch(e){toast('The Word file could not be made')}},
   docxf:async n=>{try{await offer(n,await buildDocxFormatted())}catch(e){toast('The Word file could not be made')}},
   md:n=>offer(n,toMD(ta.value)),
-  txt:n=>offer(n,plainNotes(ta.value))};
+  txt:n=>offer(n,plainNotes(ta.value)),
+  pica:n=>offer(n,picaFile(n.replace(/\.pica$/i,'')))};
 let saveKind='pdf';const EXT=k=>k==='docxf'?'docx':k;
 function askName(kind){
   saveKind=kind;const d=$('namedlg'),f=$('fname');
@@ -1546,7 +1609,7 @@ $('namedlg').addEventListener('close',()=>ta.focus({preventScroll:true}));
 
 
 /* ---------- boot ---------- */
-const saved=load();ta.value=saved!=null?saved:sampleText();
+const saved=load();ta.value=saved!=null?saved:sampleText();openedName=S.docName||'';
 syncControls();
 document.body.classList.add('focusless');
 requestAnimationFrame(()=>{render();const end=ta.value.length;ta.setSelectionRange(end,end);updateCaret();if(S.center){const top=caretEl.offsetTop-desk.clientHeight/2;desk.scrollTop=top}});

@@ -10,6 +10,8 @@ Cabeçalho e rodapé: botão *Header & footer*, até duas linhas centralizadas e
 
 **Notas de rodapé**: digite `^[` (o colchete fecha sozinho), use Ctrl+Alt+N ou o botão *Footnote* e escreva a nota; a seta → volta ao texto. A nota é datilografada no pé da mesma folha, sob um traço; no Word vira nota de rodapé de verdade, no Markdown fica `^[nota]` e no texto simples vai para o fim.
 
+**Documents ▾**: os 5 documentos mais recentes ficam guardados neste navegador, com tudo (formatação, notas, cabeçalho e rodapé, papel e tinta); ☆ fixa um documento para ele nunca sair. *New document* guarda o atual na lista. Para uma cópia sua, que sobrevive a limpar o navegador e vai para outro computador, use *Save ▾ Pica document (.pica)* e abra-o depois com *Open…*.
+
 **Save ▾**: um só botão para salvar em PDF, Word (.docx), Markdown ou texto; antes de salvar, uma caixa pede o nome do arquivo. **New document** começa uma folha em branco (o Undo traz o texto de volta) e **Ctrl+Enter** abre uma folha nova.
 
 **Word, formatted (.docx)**: padrão de documentos jurídicos — Georgia 11, justificado, entrelinhas 1,2, A4 com margens de 2,5/3 cm, número de página a partir da 2ª. Números digitados no começo da linha (`1.`, `1.1`, `1.1.1`, `1.1.1.1`, `(a)`, `(1)`, `(i)`, `(A)`) viram numeração automática do Word; títulos de 1º nível saem em negrito e caixa alta; citações em parágrafo próprio, recuadas e em itálico; `[•]` e `[comentários]` em amarelo; termos definidos, como (“Fundo”), em negrito.
